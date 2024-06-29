@@ -350,3 +350,35 @@ for condition, epochs_list in all_pa_epochs.items():
     
     # Store the ERP in the dictionary
     evks[condition] = evk
+
+
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}')
+if not plot_directory.exists():
+    plot_directory.mkdir(parents=True)
+
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+
+# Calculate the number of participants based on the evoked objects
+num_participants_used = len(epochs_list)
+
+# Adjust the title with the correct number of participants
+title = f'{protocol} participants ({num_participants_used}), {onset_type} onset{ICA_file} {special}'
+
+
+# Define info for the plots
+color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
+linestyle_dict = {'pa1': '-', 'pa2': '-', 'pa3': '-', 'pa4': '-', 'pa5': '-', 'pa6': '-'}
+
+#all channels for all participants
+fig = mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=title,
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions{onset_type}{ICA_file}{special}.pdf')
