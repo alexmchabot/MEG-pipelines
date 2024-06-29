@@ -1,0 +1,389 @@
+#this protocol epochs all BA, FA, and VA events. It epochs the forth PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
+#todo: time is not shifting. 
+
+
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+
+# define protocol and onset type
+protocol = 'protocol01'
+onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+trigger_position = 0.000      # change this value to shift away from onset
+ICA = False                    # if False, skips ICA
+ICA_variance = 10            # either percent e.g. .95 or number of components e.g., 40
+reject_bad_epochs = False
+
+# define the parameters for bad epochs
+reject_criteria = dict(mag=3500e-15)  # 3500-4000 fT seems best
+flat_criteria = dict(mag=1e-15)  # 1 fT
+
+# list of participant IDs/ #of ICA components per participant at .95 variance
+participant_ids = ['R2830', #16
+                   'R2890', #24
+                   'R2896', #13, poor data
+                   'R2897', #18
+                   'R2900', #20 
+                   'R2906', #18
+                   'R2915', #14
+                   'R2968', #20 very messy data, potential reject. no kept epochs with reject thresholds
+                   'R2976', #17
+                   'R2996', #18, #poor data
+                   'R2997', #12 #all epochs rejected unless ICA is applied
+                   'R3005', #21 weak signal? 
+                   'R3007', #15 line noise? data is kind of disgusting, flat epoch rejecting rejects all epochs
+                   'R3008'  #10 really bad data, potential reject
+                  ]
+
+# mark bad channels
+bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
+
+# define the parameters for the filter
+l_freq = .01
+h_freq = 30
+
+# define the time limits for the epochs
+tmin = -0.2
+tmax = 1.0  
+
+
+
+# define subdirectory based on onset type
+subdirectory = "V_onset" if onset_type == 'vowel' else "C_onset"
+
+# load data directory
+data_dir = pathlib.Path(f'../../all data/{protocol}')
+
+# ensure the output directory exists
+output_dir = pathlib.Path(f'../../out_data/{protocol}/{subdirectory}')
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# only modify below here for a permanent reason!
+# define trigger shifts based on onset type
+def calculate_shifts(onset_type):
+    if onset_type == 'vowel':
+        bashift = 0.195-trigger_position
+        pashift = 0.130-trigger_position
+        fashift = 0.195-trigger_position
+        vashift = 0.225-trigger_position
+    elif onset_type == 'consonant':
+        bashift = 0.159-trigger_position
+        pashift = 0.028-trigger_position
+        fashift = 0.073-trigger_position
+        vashift = 0.129-trigger_position
+    else:
+        raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
+    return bashift, pashift, fashift, vashift
+    
+
+for participant_id in participant_ids:
+    # load and concatenate raws
+    sqd_files = [
+        data_dir / f"{participant_id}_trial01.sqd",
+        data_dir / f"{participant_id}_trial02.sqd",
+        data_dir / f"{participant_id}_trial03.sqd"
+    ]
+    raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
+    raw = mne.concatenate_raws(raws)
+
+    # ensure the sampling frequency is 1000 Hz
+    desired_sfreq = 1000
+    if raw.info['sfreq'] != desired_sfreq:
+        print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
+        raw.resample(sfreq=desired_sfreq)
+
+    # set bad channels
+    raw.info['bads'] = bad_channels
+
+     # Find events
+    events = mne.find_events(raw)
+    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
+
+    # Shift times for each event directly in the raw data
+    bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
+
+    # shifts the event times by the appropripriate amount
+    ba_shifted = mne.event.shift_time_events(events, ids=[4], tshift=bashift, sfreq=raw.info['sfreq'])
+    pa_shifted = mne.event.shift_time_events(events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq']) 
+    fa_shifted = mne.event.shift_time_events(events, ids=[16], tshift=fashift, sfreq=raw.info['sfreq'])
+    va_shifted = mne.event.shift_time_events(events, ids=[32], tshift=vashift, sfreq=raw.info['sfreq'])
+
+    # annotates the raw data with the shifted times
+    ba_annotations = mne.annotations_from_events(ba_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    pa_annotations = mne.annotations_from_events(pa_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    fa_annotations = mne.annotations_from_events(fa_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    va_annotations = mne.annotations_from_events(va_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+
+    # Set combined annotations on raw data
+    raw.set_annotations(ba_annotations)
+    raw.set_annotations(pa_annotations)
+    raw.set_annotations(fa_annotations)
+    raw.set_annotations(va_annotations)
+    
+    # Print original events
+    print("Original events:")
+    for event_id, event_type in mapping.items():
+        events_of_type = events[events[:, 2] == event_id]
+        for i in range(min(5, len(events_of_type))):
+            event = events_of_type[i]
+            print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
+
+    # Print shifted events
+    print("\nShifted events:")
+    for event_id, event_type in mapping.items():
+        if event_id == 4:
+            shifted_events = ba_shifted
+        elif event_id == 8:
+            shifted_events = pa_shifted
+        elif event_id == 16:
+            shifted_events = fa_shifted
+        elif event_id == 32:
+            shifted_events = va_shifted
+    
+        events_of_type = shifted_events[shifted_events[:, 2] == event_id]
+        for i in range(min(5, len(events_of_type))):
+            event = events_of_type[i]
+            print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
+    
+
+
+    # Create a raw_meg object which excludes all non-meg channels
+    raw_meg = raw.pick_types(meg=True, exclude='bads')
+
+    
+        # Apply annotations to raw_meg (with shifted times)
+    raw_meg.set_annotations(ba_annotations)
+    raw_meg.set_annotations(pa_annotations)
+    raw_meg.set_annotations(fa_annotations)
+    raw_meg.set_annotations(va_annotations)
+
+    # filter the raw data
+    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
+
+     # print number of events and their mapping
+    print("Number of events per condition:")
+    for code, condition in mapping.items():
+        num_events = len(events[events[:, 2] == code])
+        print(f"{condition}: {num_events} events")
+
+    # conditionally run ICA
+    if ICA:
+        # ICA Configuration
+        n_components = ICA_variance
+        method = 'picard'
+        max_iter = 1000
+        fit_params = dict(fastica_it=5)
+        random_state = 13
+
+        ica = mne.preprocessing.ICA(n_components=ICA_variance, 
+                                    method=method,
+                                    max_iter=max_iter,
+                                    fit_params=fit_params,
+                                    random_state=random_state)
+         # fit ICA on filtered data
+        ica.fit(raw_filtered)
+         # then tries to find the ecg artifacts in ica
+        ecg_epochs = mne.preprocessing.create_ecg_epochs(raw_filtered,
+                                                         reject=None,
+                                                         baseline=(None, -.02),
+                                                         tmin=-0.5,
+                                                         tmax=0.5)
+        ecg_evoked = ecg_epochs.average()
+        ecg_inds, ecg_scores = ica.find_bads_ecg(
+            ecg_epochs, method='ctps')
+
+        raw_filtered.load_data()
+        ica.plot_sources(raw, show_scrollbars=False)
+        ica.plot_components()
+        ica.plot_scores(ecg_scores)
+        ica.plot_sources(ecg_evoked)
+        ica.plot_overlay(ecg_evoked)
+        # apply ICA to raw data
+        raw_filtered = ica.apply(raw_filtered)
+
+    # initialize empty arrays/lists for each event type
+    ba_events_set = []
+    fa_events_set = []
+    va_events_set = []
+    pa_04_event_set = []
+
+
+    
+    # iterate through events and store them in respective arrays
+    for event in events:
+        event_code = event[2]
+        if event_code == 4:
+            ba_events_set.append(event)
+        elif event_code == 16:
+            fa_events_set.append(event)
+        elif event_code == 32:
+            va_events_set.append(event)
+
+    # Initialize lists to store sequences of 'pa' events
+    pa_sequences = []
+    
+ # Iterate over events to extract sequences of 'pa' events
+    i = 0
+    while i < len(pa_shifted):
+        if events[i, 2] == 8:  # Check if current event is 'pa'
+            # Start a new sequence
+            pa_sequence = [pa_shifted[i].tolist()]
+
+            # Continue adding events to the sequence while they are consecutive 'pa' events
+            j = i + 1
+            while j < len(pa_shifted) and pa_shifted[j, 2] == 8:
+                pa_sequence.append(pa_shifted[j].tolist())
+                j += 1
+        
+            # Store the sequence if it has more than one event
+            if len(pa_sequence) > 1:
+                pa_sequences.append(pa_sequence)
+        
+            # Move index past the current sequence to avoid re-processing
+            i = j
+        else:
+            i += 1
+
+    # Initialize lists to store events for each PA occurrence for the current participant
+
+    pa4_events = []
+
+    # Iterate through sequences and store events in respective lists
+    for sequence in pa_sequences:
+        for event_idx, event in enumerate(sequence, start=1):
+            if event_idx == 4:
+                pa4_events.append(event)
+
+
+# Print the number of 4th PA events
+#print(f"Number of 4th PA events: {len(pa4_events)}")
+            
+
+    # vonvert lists to NumPy arrays if needed
+    ba_events_set = np.array(ba_events_set)
+    pa_04_event_set = np.array(pa4_events)
+    fa_events_set = np.array(fa_events_set)
+    va_events_set = np.array(va_events_set)
+
+
+    
+    if reject_bad_epochs:
+        epochs_ba = mne.Epochs(raw_filtered, 
+                               ba_events_set, 
+                               {'ba': 4}, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_pa = mne.Epochs(raw_filtered, 
+                               pa_04_event_set, 
+                               {'pa': 8}, 
+                               tmin=tmin,
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_fa = mne.Epochs(raw_filtered, 
+                               fa_events_set, 
+                               {'fa': 16}, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_va = mne.Epochs(raw_filtered, 
+                               va_events_set, 
+                               {'va': 32},
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                            
+                               preload=True)
+    else:
+        epochs_ba = mne.Epochs(raw_filtered, ba_shifted, {'ba': 4}, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa = mne.Epochs(raw_filtered, pa_04_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, preload=True)
+        epochs_fa = mne.Epochs(raw_filtered, fa_shifted, {'fa': 16}, tmin=tmin, tmax=tmax, preload=True)
+        epochs_va = mne.Epochs(raw_filtered, va_shifted, {'va': 32}, tmin=tmin, tmax=tmax, preload=True) 
+
+
+# Print the number of epochs in epochs_pa
+#print(f"Number of epochs in epochs_pa: {len(epochs_pa)}")
+
+# Check if epochs were dropped and continue analysis accordingly
+    if len(epochs_ba) == 0:
+        print(f"No 'ba' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
+        continue
+
+    if len(epochs_pa) == 0:
+        print(f"No 'pa' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
+        continue
+
+    if len(epochs_fa) == 0:
+        print(f"No 'fa' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
+        continue
+
+    if len(epochs_va) == 0:
+        print(f"No 'va' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
+        continue
+
+    
+     # create evoked objects from epochs
+    ba_evoked = epochs_ba.average()
+    pa_evoked = epochs_pa.average()
+    fa_evoked = epochs_fa.average()
+    va_evoked = epochs_va.average()
+    evokeds = [ba_evoked, pa_evoked, fa_evoked, va_evoked]
+
+
+# Print the number of epochs in the PA evoked object
+#print(f"Number of epochs in PA evoked object: {pa_evoked.nave}")
+    
+    # ensure the output directory exists
+    output_dir = pathlib.Path(f'../../out_data/{protocol}/{subdirectory}')
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # define file names for saving based on ICA variable
+    file_suffix = "_ICA" if ICA else ""
+    reject_suffix = "_bad_epochs_rejected" if reject_bad_epochs else ""
+    
+    # save epochs data
+    epochs_data = {"ba": epochs_ba, "va": epochs_va, "fa": epochs_fa, "pa": epochs_pa}
+    for event_type, epoch_data in epochs_data.items():
+        epoch_data.save(output_dir / f'{participant_id}_epochs_{event_type}{file_suffix}{reject_suffix}-epo.fif', overwrite=True)
+    
+    # save evoked data
+    mne.write_evokeds(output_dir / f'{participant_id}_evokeds-ave{file_suffix}{reject_suffix}.fif', list(evokeds), overwrite=True)
+
+    if ICA:
+        # produce topographic map to check eye activity
+        #create a 3x6 grid of subplots, longer time scale than above
+        fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
+        times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450]
+        #plot the second topographic map on the middle subplot
+        ba_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
+        #plot the third topographic map on the bottom subplot
+        pa_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
+        #plot the third topographic map on the bottom subplot
+        fa_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
+        #plot the third topographic map on the bottom subplot
+        va_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
+        #add a caption to the figure
+        fig.suptitle(f'MEG Topographic Plots: 200-450 ms, {onset_type} onset')
+        #set the titles for each subplot row
+        fig.text(0.5, 0.9, 'BA evoked', ha='center', fontsize=12)
+        fig.text(0.5, 0.68, 'PA evoked', ha='center', fontsize=12)
+        fig.text(0.5, 0.45, 'FA evoked', ha='center', fontsize=12)
+        fig.text(0.5, 0.22, 'VA evoked', ha='center', fontsize=12)
+        #adjust spacing between subplots
+        plt.subplots_adjust(hspace=0.4, wspace=0.2)
+        plt.show()
+        plt.close()
+    
+    # delete variables to free up memory
+    del raw, raw_meg, raw_filtered, epochs_ba, epochs_pa, epochs_fa, epochs_va
+    del ba_evoked, pa_evoked, fa_evoked, va_evoked, evokeds
