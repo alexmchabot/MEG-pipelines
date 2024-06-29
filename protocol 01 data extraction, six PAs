@@ -1,0 +1,352 @@
+#data extraction script protocol one only pa events. 
+
+import os
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+
+# define protocol and onset type
+protocol = 'protocol01'
+onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+date = 'July 01'   
+n = 'n=14'
+trigger_position = 0.000        # change this value to shift away from onset
+ICA = False                      # if False, skips ICA
+ICA_variance = 10              # either percent e.g. .95 or number of components e.g., 40
+reject_bad_epochs = False
+
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+special = '1000 ms'                                            # Unique save tag for deviations from usual parameters, normally empty
+plot_show = False                                              # Change to True to display plots interactively
+
+# list of participant IDs/ #of ICA components per participant at .95 variance
+participant_ids = ['R2830', #16
+                   'R2890', #24
+                   'R2896', #13, poor data
+                   'R2897', #18
+                   'R2900', #20 
+                   'R2906', #18
+                   'R2915', #14
+                   'R2968', #20
+                   'R2976', #17
+                   'R2996', #18, #poor data
+                   'R2997', #12
+                   'R3005', #21 weak signal? 
+                   'R3007', #15 line noise? 
+                   'R3008'  #10 really bad data, potential reject
+                  ]
+
+# mark bad channels
+bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
+
+# define the parameters for the filter
+l_freq = 1
+h_freq = 25
+
+# define the time limits for the epochs
+tmin = -0.2
+tmax = 1.0  
+
+# define the parameters for bad epochs
+reject_criteria = dict(mag=3500e-15)  # 3500-4000 fT seems best
+flat_criteria = dict(mag=1e-15)  # 1 fT
+
+# define subdirectory based on onset type
+subdirectory = "V_onset" if onset_type == 'vowel' else "C_onset"
+
+# load data directory
+data_dir = pathlib.Path(f'../../all data/{protocol}')
+
+# ensure the output directory exists
+output_dir = pathlib.Path(f'../../out_data/{protocol}/{subdirectory}')
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# only modify below here for a permanent reason!
+# define trigger shifts based on onset type
+def calculate_shifts(onset_type):
+    if onset_type == 'vowel':
+        pashift = 0.125 - trigger_position
+    elif onset_type == 'consonant':
+        pashift = 0.028 - trigger_position
+    else:
+        raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
+    return pashift
+
+# Calculate shifts once before the loop
+pashift = calculate_shifts(onset_type)
+# Initialize variables
+pa_evokeds = []
+
+conditions = ['pa1', 'pa2', 'pa3', 'pa4', 'pa5', 'pa6']  # Example conditions based on event mapping
+
+# Initialize lists to store events for each PA occurrence
+all_pa_epochs = {
+    'pa1': [],
+    'pa2': [],
+    'pa3': [],
+    'pa4': [],
+    'pa5': [],
+    'pa6': []
+}
+
+# Iterate over each participant
+for participant_id in participant_ids:
+    # Load and concatenate raws
+    sqd_files = [
+        data_dir / f"{participant_id}_trial01.sqd",
+        data_dir / f"{participant_id}_trial02.sqd",
+        data_dir / f"{participant_id}_trial03.sqd"
+    ]
+    raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
+    raw = mne.concatenate_raws(raws)
+
+    # Ensure the sampling frequency is 1000 Hz
+    desired_sfreq = 1000
+    if raw.info['sfreq'] != desired_sfreq:
+        print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
+        raw = raw.resample(sfreq=desired_sfreq)  # Resample the raw object
+
+    # Set bad channels
+    raw.info['bads'] = bad_channels
+
+     # find events
+    events = mne.find_events(raw)
+    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
+    
+    # Shift times for each event directly in the raw data
+    pashift = calculate_shifts(onset_type)
+    pa_shifted = mne.event.shift_time_events(events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq'])
+
+    # annotates the raw data with the shifted times
+    pa_annotations = mne.annotations_from_events(pa_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+
+    # Set combined annotations on raw data
+    raw.set_annotations(pa_annotations)
+    
+# Print original PA event times
+    print("Original PA event times:")
+    for event_id, event_type in mapping.items():
+        if event_id == 8:
+            events_of_type = events[events[:, 2] == event_id]
+            for i in range(min(5, len(events_of_type))):
+                event = events_of_type[i]
+                print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
+
+    # Print shifted PA event times
+    print("\nShifted PA event times:")
+    shifted_events = pa_shifted  # Assuming pa_shifted contains shifted events
+    for event_id, event_type in mapping.items():
+        if event_id == 8:
+            events_of_type = shifted_events[shifted_events[:, 2] == event_id]
+            for i in range(min(5, len(events_of_type))):
+                event = events_of_type[i]
+                print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
+
+
+    # Create a raw_meg object which excludes all non-meg channels
+    raw_meg = raw.pick_types(meg=True, exclude='bads')
+
+    # Apply annotations to raw_meg (with shifted times)
+    raw_meg.set_annotations(pa_annotations)
+    
+    # Filter the raw data
+    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
+
+     # Convert annotations back to events for filtered data, just for printing debugging, can delete both lines later
+    event_id_mapping = {'pa': 8}  # Map 'pa' annotation to event ID 8
+    events_filtered, _ = mne.events_from_annotations(raw_filtered, event_id=event_id_mapping)
+    
+    # conditionally run ICA
+    if ICA:
+        # ICA Configuration
+        n_components = ICA_variance
+        method = 'picard'
+        max_iter = 1000
+        fit_params = dict(fastica_it=5)
+        random_state = 13
+
+        ica = mne.preprocessing.ICA(n_components=ICA_variance, 
+                                    method=method,
+                                    max_iter=max_iter,
+                                    fit_params=fit_params,
+                                    random_state=random_state)
+         # fit ICA on filtered data
+        ica.fit(raw_filtered)
+         # then tries to find the ecg artifacts in ica
+        ecg_epochs = mne.preprocessing.create_ecg_epochs(raw_filtered,
+                                                         reject=None,
+                                                         baseline=(None, -.02),
+                                                         tmin=-0.5,
+                                                         tmax=0.5)
+        ecg_evoked = ecg_epochs.average()
+        ecg_inds, ecg_scores = ica.find_bads_ecg(
+            ecg_epochs, method='ctps')
+
+        raw_filtered.load_data()
+        ica.plot_sources(raw, show_scrollbars=False)
+        ica.plot_components()
+        ica.plot_scores(ecg_scores)
+        ica.plot_sources(ecg_evoked)
+        ica.plot_overlay(ecg_evoked)
+        # apply ICA to raw data
+        raw_filtered = ica.apply(raw_filtered)
+
+    
+    # Initialize lists to store sequences of 'pa' events
+    pa_sequences = []
+
+    # Iterate over events to extract sequences of 'pa' events
+    i = 0
+    while i < len(pa_shifted):
+        if pa_shifted[i, 2] == 8:  # Check if current event is 'pa'
+            # Start a new sequence
+            pa_sequence = [pa_shifted[i].tolist()]
+
+            # Continue adding events to the sequence while they are consecutive 'pa' events
+            j = i + 1
+            while j < len(pa_shifted) and pa_shifted[j, 2] == 8:
+                pa_sequence.append(pa_shifted[j].tolist())
+                j += 1
+        
+            # Store the sequence if it has more than one event
+            if len(pa_sequence) > 1:
+                pa_sequences.append(pa_sequence)
+            # Move index past the current sequence to avoid re-processing
+            i = j
+        else:
+            i += 1
+
+    # Initialize lists to store events for each PA occurrence for the current participant
+    pa1_participant = []
+    pa2_participant = []
+    pa3_participant = []
+    pa4_participant = []
+    pa5_participant = []
+    pa6_participant = []
+
+    # Iterate through sequences and store events in respective lists
+    for sequence in pa_sequences:
+        for event_idx, event in enumerate(sequence, start=1):
+            if event_idx == 1:
+                pa1_participant.append(event)
+            elif event_idx == 2:
+                pa2_participant.append(event)
+            elif event_idx == 3:
+                pa3_participant.append(event)
+            elif event_idx == 4:
+                pa4_participant.append(event)
+            elif event_idx == 5:
+                pa5_participant.append(event)
+            elif event_idx == 6:
+                pa6_participant.append(event)
+                
+
+# Convert lists to NumPy arrays after collecting events for the current participant
+    pa1_participant = np.array(pa1_participant)
+    pa2_participant = np.array(pa2_participant)
+    pa3_participant = np.array(pa3_participant)
+    pa4_participant = np.array(pa4_participant)
+    pa5_participant = np.array(pa5_participant)
+    pa6_participant = np.array(pa6_participant)
+
+
+    if reject_bad_epochs:
+        epochs_pa1 = mne.Epochs(raw_filtered, 
+                               pa1_participant, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_pa2 = mne.Epochs(raw_filtered, 
+                               pa2_participant, 
+                               tmin=tmin,
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_pa3 = mne.Epochs(raw_filtered, 
+                               pa3_participant, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_pa4 = mne.Epochs(raw_filtered, 
+                               pa4_participant, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_pa5 = mne.Epochs(raw_filtered, 
+                               pa5_participant, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+        epochs_pa6 = mne.Epochs(raw_filtered, 
+                               pa6_participant, 
+                               tmin=tmin, 
+                               tmax=tmax, 
+                               reject=reject_criteria, 
+                               flat=flat_criteria, 
+                               preload=True)
+
+    
+    else:
+        epochs_pa1 = mne.Epochs(raw_filtered, pa1_participant, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa2 = mne.Epochs(raw_filtered, pa2_participant, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa3 = mne.Epochs(raw_filtered, pa3_participant, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa4 = mne.Epochs(raw_filtered, pa4_participant, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa5 = mne.Epochs(raw_filtered, pa5_participant, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa6 = mne.Epochs(raw_filtered, pa6_participant, tmin=tmin, tmax=tmax, preload=True)
+
+    print(f"Participant {participant_id}:")
+    print(f"Number of epochs for pa1: {len(epochs_pa1)}")
+    print(f"Number of epochs for pa2: {len(epochs_pa2)}")
+    print(f"Number of epochs for pa3: {len(epochs_pa3)}")
+    print(f"Number of epochs for pa4: {len(epochs_pa4)}")
+    print(f"Number of epochs for pa5: {len(epochs_pa5)}")
+    print(f"Number of epochs for pa6: {len(epochs_pa6)}")
+
+        # Append epochs to the accumulated dataset
+    all_pa_epochs['pa1'].append(epochs_pa1)
+    all_pa_epochs['pa2'].append(epochs_pa2)
+    all_pa_epochs['pa3'].append(epochs_pa3)
+    all_pa_epochs['pa4'].append(epochs_pa4)
+    all_pa_epochs['pa5'].append(epochs_pa5)
+    all_pa_epochs['pa6'].append(epochs_pa6)
+
+    # Clean up variables
+    del raw, raws, raw_filtered, raw_meg
+
+    # Print current state of all_pa_epochs after each participant
+    print(f"Current state of all_pa_epochs:")
+    for condition, epochs_list in all_pa_epochs.items():
+        print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
+
+# After the loop, you can print the final state of all_pa_epochs
+print("Final state of all_pa_epochs:")
+for condition, epochs_list in all_pa_epochs.items():
+    print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
+
+# Now all_pa_epochs contains all epochs for pa1 to pa6 across all participants
+# Initialize a dictionary to store ERPs for each condition
+evks = {}
+
+# Iterate through each condition in all_pa_epochs
+for condition, epochs_list in all_pa_epochs.items():
+    # Combine all epochs across participants for the current condition
+    combined_epochs = mne.concatenate_epochs(epochs_list)
+    
+    # Calculate the ERP (average across epochs)
+    evk = combined_epochs.average()
+    
+    # Store the ERP in the dictionary
+    evks[condition] = evk
