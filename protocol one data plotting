@@ -1,0 +1,277 @@
+#plotting script protocol one, channel pics plots
+import os
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+
+# Select protocol and onset type
+protocol = 'protocol01'
+onset_type = 'vowel'  # or 'consonant' based on your needs
+
+# Define dataset based on onset type
+dataset = 'V_onset' if onset_type == 'vowel' else 'C_onset'
+# Select as needed for your specific use case
+time_shift = 0.00          
+# True for ICA files, else False
+ICA = False                   
+#True for epoch rejected files, else False
+reject_bad_epochs = False
+# Used to define the plot directory
+date = 'July 01'            
+# Used in plot titles and directory definition
+n = 'n=14'             
+# Unique save tag for deviations from usual parameters, normally empty
+special = ''     
+ # Change to True to display plots interactively
+plot_show = False                                            
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+reject_file = "_bad_epochs_rejected" if reject_bad_epochs else ""
+#where to get the data
+data_dir = pathlib.Path(f'../../out_data/{protocol}/{dataset}')
+
+# Define the list of participants, add new ones to the bottom
+parts = {
+    'part01': 'R2830',
+    'part02': 'R2890',
+    'part03': 'R2896',
+    'part04': 'R2897',
+    'part05': 'R2900',
+    'part06': 'R2906',
+    'part07': 'R2915',
+    'part08': 'R2968',
+    'part09': 'R2976',
+    'part10': 'R2996',
+    'part11': 'R2997',
+    'part12': 'R3005',
+    'part13': 'R3007',
+    'part14': 'R3008'
+}
+
+
+# Define the epoch dictionary, load the saved epochs for each participant
+epoch_dict = {}
+
+
+for part_label, participant_id in parts.items():
+    try:
+        epoch_dict.update({
+            f"{part_label}_ba_epochs": mne.read_epochs(data_dir / f"{participant_id}_epochs_ba{ICA_file}{reject_file}-epo.fif"),
+            f"{part_label}_va_epochs": mne.read_epochs(data_dir / f"{participant_id}_epochs_va{ICA_file}{reject_file}-epo.fif"),
+            f"{part_label}_fa_epochs": mne.read_epochs(data_dir / f"{participant_id}_epochs_fa{ICA_file}{reject_file}-epo.fif"),
+            f"{part_label}_pa_epochs": mne.read_epochs(data_dir / f"{participant_id}_epochs_pa{ICA_file}{reject_file}-epo.fif")
+        })
+    except FileNotFoundError:
+        print(f"File not found for {participant_id}. Skipping.")
+    except Exception as e:
+        print(f"An error occurred for {participant_id}: {e}. Skipping.")
+
+
+# Print the counts of epochs for each condition
+conditions = ['ba', 'pa', 'fa', 'va']
+epoch_counts = {condition: 0 for condition in conditions}
+for part_label in parts:
+    for condition in conditions:
+        if f"{part_label}_{condition}_epochs" in epoch_dict:
+            epoch_counts[condition] += len(epoch_dict[f"{part_label}_{condition}_epochs"])
+
+for condition, count in epoch_counts.items():
+    print(f"Condition: {condition}, Number of Epochs: {count}")
+
+# Turn all epochs into ERPs for the four conditions
+epochs = {}
+for condition in conditions:
+    epoch_list = [epoch_dict[f"{part_label}_{condition}_epochs"] for part_label in parts if f"{part_label}_{condition}_epochs" in epoch_dict]
+    if epoch_list:  # Only concatenate if the list is not empty
+        epochs[condition] = mne.concatenate_epochs(epoch_list).average()
+
+# Collect all four evoked data sets into one evoked object
+evokeds = [epochs[cond] for cond in conditions]
+
+# Turn the list of evokeds into a dictionary
+evks = dict(zip(conditions, evokeds))
+
+# Check the content of evokeds, make sure all participants are in there
+print(evokeds)
+
+
+#this cell makes and saves all the basic plots, GFP, mean, butterfly, and topo
+# Create the directory to store the plots
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}')
+if not plot_directory.exists():
+    plot_directory.mkdir(parents=True)
+
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+
+# Define info for the plots
+color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
+linestyle_dict = {'pa': '-', 'ba': '-', 'fa': '-', 'va': '-'}
+
+#all channels for all participants
+fig = mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special} {reject_file}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERP_{onset_type}{ICA_file}{special}{reject_file}.pdf')
+plt.close()
+
+#all channels for all participants
+fig = mne.viz.plot_compare_evokeds(evks,
+                             combine='mean',
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'{protocol} participants ({n}), {onset_type} onset {ICA_file} {special} mean {reject_file}',
+                             show=plot_show,
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERP_{onset_type}{ICA_file}mean_{special}{reject_file}.pdf')
+plt.close()
+
+#butterfly plots of all conditions
+
+#create subplots for the butterfly plots
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))
+
+#access each evoked object from the dictionary using its key
+evks['pa'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
+axes[0, 0].set_title('PA evoked, all channels')
+
+evks['ba'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
+axes[0, 1].set_title('BA evoked, all channels')
+
+evks['fa'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
+axes[1, 0].set_title('FA evoked, all channels')
+
+evks['va'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 1], show=False)
+axes[1, 1].set_title('VA evoked, all channels')
+
+#calculate the maximum ylim value among the four plots
+max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten()])
+
+#set the same ylim value for all subplots
+for ax in axes.flatten():
+    ax.set_ylim([-max_ylim, max_ylim])
+
+#add a title to the plot
+plt.suptitle(f'{protocol} All channels {onset_type} onset {ICA_file}{special} {reject_file}', fontsize=14)
+
+#show the plot
+if plot_show:
+    plt.show()
+
+#save the figure
+plt.savefig(f'{plot_directory}/butterfly4conditions_{onset_type}{ICA_file}{special}{reject_file}.pdf')
+plt.close()
+
+#create a 3x6 grid of subplots
+fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
+
+times = [0.150, 0.200, 0.250, 0.300, 0.350, 0.400]
+
+#plot the second topographic map on the middle subplot
+evks['pa'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
+
+#plot the third topographic map on the bottom subplot
+evks['ba'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
+
+#plot the third topographic map on the bottom subplot
+evks['fa'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
+
+#plot the third topographic map on the bottom subplot
+evks['va'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
+
+#add a caption to the figure
+fig.suptitle(f'{protocol} MEG Topographic Plots: 150-400 ms, {time_shift}  {onset_type} onset {ICA_file}{special}{reject_file}')
+
+#set the titles for each subplot row
+fig.text(0.5, 0.73, 'PA evoked', ha='center', fontsize=12)
+fig.text(0.5, 0.5, 'BA evoked', ha='center', fontsize=12)
+fig.text(0.5, 0.25, 'FA evoked', ha='center', fontsize=12)
+fig.text(0.5, 0.02, 'VA evoked', ha='center', fontsize=12)
+
+#adjust spacing between subplots
+plt.subplots_adjust(hspace=0.4, wspace=0.2)
+
+#show the plot
+if plot_show:
+    plt.show()
+
+#save the figure
+plt.savefig(f'{plot_directory}/topos_{onset_type}{ICA_file}{special}{reject_file}.pdf')
+plt.close()
+
+
+#this snippet is used to find the channels with the highest and lowest amplitudes
+
+#first it defines values for croping the evoked data to the time span you think is of interest
+crop_min=0.300
+crop_max=0.550
+
+#then it creates copies of the original evoked objects for the three deviant conditions, this keeps the evks object intact
+evks_crop_ba = evks['ba'].copy()
+evks_crop_fa = evks['fa'].copy()
+evks_crop_va = evks['va'].copy()
+
+#this crops the copies
+evks_crop_ba.crop(tmin=crop_min, tmax=crop_max)
+evks_crop_fa.crop(tmin=crop_min, tmax=crop_max)
+evks_crop_va.crop(tmin=crop_min, tmax=crop_max)
+
+#this combines the cropped copies into a single evoked object
+dev_evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_fa, evks_crop_va], weights='equal')
+
+#this calculates the maximum and minimum amplitudes across time for each channel
+max_amps = np.max(dev_evks_crop.data, axis=1)
+min_amps = np.min(dev_evks_crop.data, axis=1)
+
+#this select the channels with the highest and lowest amplitudes, it produces two objects
+highest_channels = max_amps.argsort()[-10:][::-1]
+lowest_channels = min_amps.argsort()[:10]
+
+#for refernce, this prints the channel names and amplitudes
+print('Channels with highest amplitudes:')
+for i, ch in enumerate(highest_channels):
+    print(f'{i+1}. {dev_evks_crop.ch_names[ch]}: {max_amps[ch]:.3f}')
+
+print('\nChannels with lowest amplitudes:')
+for i, ch in enumerate(lowest_channels):
+    print(f'{i+1}. {dev_evks_crop.ch_names[ch]}: {min_amps[ch]:.3f}')
+
+# Combine the highest and lowest channels and ensure no duplicates
+peak_channels = list(set(highest_channels) | set(lowest_channels))
+
+# Plot the evoked responses for the extreme channels
+dev_evks_crop.plot(exclude='bads', picks=peak_channels, window_title='Evoked, VA .150-.250 s', show=True)
+
+# Define info in the plots
+# Convert indices to channel names
+l_temporal_chans = [dev_evks_crop.ch_names[ch] for ch in lowest_channels]
+r_temporal_chans = [dev_evks_crop.ch_names[ch] for ch in highest_channels]
+
+# Pick the channels by their names
+for evoked in evokeds:
+    l_temporal = mne.pick_channels(evoked.info['ch_names'], include=l_temporal_chans)
+for evoked in evokeds:
+    r_temporal = mne.pick_channels(evoked.info['ch_names'], include=r_temporal_chans)
+
+# Plot evoked responses before cropping
+for condition, evoked in evks.items():
+    evoked.plot(show=True)
+
+# Plot evoked responses after cropping
+evks_crop_ba.plot(show=True)
+evks_crop_fa.plot(show=True)
+evks_crop_va.plot(show=True)
