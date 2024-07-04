@@ -489,7 +489,7 @@ fig = mne.viz.plot_compare_evokeds(evks,
                                   ) 
 plt.savefig(f'{plot_directory}/ERPs_all_deviant_condition_sets_after_pa{onset_type}{ICA_file}{special}.pdf')
 
-# Example corrected color dictionary with valid hexadecimal codes
+# color dictionary with hexadecimal codes
 color_dict = {
     'ba_4': '#0000FF20',     # Blue
     'ba_5': '#0000FF50',   # Blue with 50% transparency
@@ -519,7 +519,7 @@ linestyle_dict = {
 # Convert evks dictionary into a format compatible with plot_compare_evokeds
 evokeds_dict = {key: [value] for key, value in evks.items()}
 
-# Plot all ERPs using MNE's plot_compare_evokeds function
+# Plot all ERPs 
 fig = mne.viz.plot_compare_evokeds(evks,
                              ci=False,
                              legend='upper left',
@@ -552,7 +552,7 @@ linestyle_dict_6 = {
     'va_6': '-'
 }
 
-# Plot ERPs using MNE's plot_compare_evokeds function
+# Plot ERPs 
 fig = mne.viz.plot_compare_evokeds(evks_6,
                              ci=False,
                              legend='upper left',
