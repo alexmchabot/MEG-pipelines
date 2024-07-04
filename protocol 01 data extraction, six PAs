@@ -331,7 +331,7 @@ for participant_id in participant_ids:
     for condition, epochs_list in all_pa_epochs.items():
         print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
 
-# After the loop, you can print the final state of all_pa_epochs
+# after the loop, print the final state of all_pa_epochs
 print("Final state of all_pa_epochs:")
 for condition, epochs_list in all_pa_epochs.items():
     print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
