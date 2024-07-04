@@ -204,6 +204,8 @@ for participant_id in participant_ids:
         # apply ICA to raw data
         raw_filtered = ica.apply(raw_filtered)
 
+
+    #this snippet extracts the X numbered PA event in sequences of PA
     # initialize empty arrays/lists for each event type
     ba_events_set = []
     fa_events_set = []
