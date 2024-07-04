@@ -121,7 +121,8 @@ for participant_id in participant_ids:
     raw.set_annotations(pa_annotations)
     raw.set_annotations(fa_annotations)
     raw.set_annotations(va_annotations)
-    
+
+    #print shit for sanity check
     # Print original events
     print("Original events:")
     for event_id, event_type in mapping.items():
