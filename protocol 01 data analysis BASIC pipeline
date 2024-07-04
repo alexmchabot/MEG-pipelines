@@ -1,5 +1,4 @@
 #this protocol epochs all BA, FA, and VA events. It epochs the forth PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
-#todo: time is not shifting. 
 
 
 import pathlib
