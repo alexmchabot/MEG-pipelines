@@ -1,3 +1,7 @@
+#this script categorizes PA events as a function of the number of BA, FA, and VA events which precede them. It epochs them, and plots them. 
+#This script works as intended as of 07/02/2024
+
+
 import pathlib
 import numpy as np
 import matplotlib
@@ -12,9 +16,10 @@ date = 'June 22'
 n = 'n=15'
 specific_case = 'suppression'
 trigger_position = 0.000      # change this value to shift away from onset
-ICA = False                    # if False, skips ICA
+ICA = True                    # if False, skips ICA
 ICA_variance = .98            # either percent e.g. .95 or number of components e.g., 40
 reject_bad_epochs = False
+baseline = (None, 0)  # means from the first instant to t = 0
 
 # define file names for saving based on ICA variable
 ICA_file = "_ICA" if ICA else ""
@@ -343,17 +348,30 @@ for participant_id in participant_ids:
     pa_after_va_5 = np.array(categorized_events['pa_after_va_5'])
     pa_after_va_6 = np.array(categorized_events['pa_after_va_6'])
 
+    if reject_bad_epochs:
+        # Create epochs from the events for the current participant
+        epochs_pa_after_ba_4 = mne.Epochs(raw_filtered, pa_after_ba_4, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_ba_5 = mne.Epochs(raw_filtered, pa_after_ba_5, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_ba_6 = mne.Epochs(raw_filtered, pa_after_ba_6, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_fa_4 = mne.Epochs(raw_filtered, pa_after_fa_4, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_fa_5 = mne.Epochs(raw_filtered, pa_after_fa_5, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_fa_6 = mne.Epochs(raw_filtered, pa_after_fa_6, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_va_4 = mne.Epochs(raw_filtered, pa_after_va_4, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_va_5 = mne.Epochs(raw_filtered, pa_after_va_5, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+        epochs_pa_after_va_6 = mne.Epochs(raw_filtered, pa_after_va_6, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
+
     
-    # Create epochs from the events for the current participant
-    epochs_pa_after_ba_4 = mne.Epochs(raw_filtered, pa_after_ba_4, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_ba_5 = mne.Epochs(raw_filtered, pa_after_ba_5, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_ba_6 = mne.Epochs(raw_filtered, pa_after_ba_6, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_fa_4 = mne.Epochs(raw_filtered, pa_after_fa_4, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_fa_5 = mne.Epochs(raw_filtered, pa_after_fa_5, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_fa_6 = mne.Epochs(raw_filtered, pa_after_fa_6, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_va_4 = mne.Epochs(raw_filtered, pa_after_va_4, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_va_5 = mne.Epochs(raw_filtered, pa_after_va_5, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
-    epochs_pa_after_va_6 = mne.Epochs(raw_filtered, pa_after_va_6, tmin=tmin, tmax=tmax, preload=True, event_repeated='drop')
+    else:
+        # Create epochs from the events for the current participant
+        epochs_pa_after_ba_4 = mne.Epochs(raw_filtered, pa_after_ba_4, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_ba_5 = mne.Epochs(raw_filtered, pa_after_ba_5, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_ba_6 = mne.Epochs(raw_filtered, pa_after_ba_6, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_fa_4 = mne.Epochs(raw_filtered, pa_after_fa_4, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_fa_5 = mne.Epochs(raw_filtered, pa_after_fa_5, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_fa_6 = mne.Epochs(raw_filtered, pa_after_fa_6, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_va_4 = mne.Epochs(raw_filtered, pa_after_va_4, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_va_5 = mne.Epochs(raw_filtered, pa_after_va_5, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa_after_va_6 = mne.Epochs(raw_filtered, pa_after_va_6, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
 
     for event_type in categorized_events.keys():
         categorized_events[event_type].clear()
