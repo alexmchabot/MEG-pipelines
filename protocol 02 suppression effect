@@ -1,0 +1,548 @@
+##this script extracts pa as a function of the number of ba, va, or fa events which precede it in a sequence
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+
+# define protocol and onset type
+protocol = 'protocol02'
+onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+date = 'June 22'   
+n = 'n=15'
+specific_case = 'suppression'
+trigger_position = 0.000      # change this value to shift away from onset
+ICA = False                    # if False, skips ICA
+ICA_variance = .98            # either percent e.g. .95 or number of components e.g., 40
+reject_bad_epochs = False
+
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+special = '1000 ms'                                            # Unique save tag for deviations from usual parameters, normally empty
+plot_show = False                                              # Change to True to display plots interactively
+
+
+# list of participant IDs
+participant_ids = [#'R3027', #1
+                   #'R3039', #2
+                   #'R3401', #3
+                   #'R3703', #4
+                   #'R3078', #5
+                   #'R3079', #6
+                   #'R3086', #7
+                   #'R3090', #8
+                   #'R3109', #9
+                   #'R3112', #10
+                   #'R3113', #11
+                   'R3117', #12
+                   'R3120', #13
+                   'R3124', #14
+                   'R3126'  #15
+                  ] 
+
+# Mark bad channels
+bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
+
+# Define the parameters for the filter
+l_freq = 1
+h_freq = 25
+
+# Define the time limits for the epochs
+tmin = -0.2
+tmax = 1.0  
+
+# Define the parameters for bad epochs
+reject_criteria = dict(mag=3000e-15)  # 3500-4000 fT seems best
+flat_criteria = dict(mag=1e-15)  # 1 fT
+
+# Define subdirectory based on onset type
+subdirectory = "suppression" 
+
+# Load data directory
+data_dir = pathlib.Path(f'../../all data/{protocol}')
+
+# Ensure the output directory exists
+output_dir = pathlib.Path(f'../../out_data/{protocol}/{subdirectory}')
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# Define trigger shifts based on onset type
+def calculate_shifts(onset_type):
+    if onset_type == 'vowel':
+        bashift = 0.190-trigger_position
+        pashift = 0.130-trigger_position
+        fashift = 0.200-trigger_position
+        vashift = 0.225-trigger_position
+    elif onset_type == 'consonant':
+        bashift = 0.155-trigger_position
+        pashift = 0.030-trigger_position
+        fashift = 0.060-trigger_position
+        vashift = 0.160-trigger_position
+    else:
+        raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
+    return bashift, pashift, fashift, vashift
+
+bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
+
+
+ # Initialize dictionary to hold categorized PA events
+categorized_events = {
+    'pa_after_ba_4': [],
+    'pa_after_ba_5': [],
+    'pa_after_ba_6': [],
+    'pa_after_fa_4': [],
+    'pa_after_fa_5': [],
+    'pa_after_fa_6': [],
+    'pa_after_va_4': [],
+    'pa_after_va_5': [],
+    'pa_after_va_6': []
+}
+
+categorized_epochs = {
+    'ba_4': [],
+    'ba_5': [],
+    'ba_6': [],
+    'fa_4': [],
+    'fa_5': [],
+    'fa_6': [],
+    'va_4': [],
+    'va_5': [],
+    'va_6': []
+}
+
+
+# Process each participant
+for participant_id in participant_ids:
+    # Load and concatenate raws
+    sqd_files = [
+        data_dir / f"{participant_id}_trial01.sqd",
+        data_dir / f"{participant_id}_trial02.sqd",
+        data_dir / f"{participant_id}_trial03.sqd"
+    ]
+    raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
+    raw = mne.concatenate_raws(raws)
+
+    # Ensure the sampling frequency is 1000 Hz
+    desired_sfreq = 1000
+    if raw.info['sfreq'] != desired_sfreq:
+        print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
+        raw.resample(sfreq=desired_sfreq)
+
+    # Set bad channels
+    raw.info['bads'] = bad_channels
+
+    # Find events and map them to conditions
+    events = mne.find_events(raw)
+    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
+    annot_from_events = mne.annotations_from_events(
+        events=events, event_desc=mapping, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'])
+    raw.set_annotations(annot_from_events)
+
+    # Split events into different categories
+    ba_events = events[events[:, 2] == 4]
+    pa_events = events[events[:, 2] == 8]
+    fa_events = events[events[:, 2] == 16]
+    va_events = events[events[:, 2] == 32]
+    
+# Shift times for each event directly in the raw data
+    bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
+
+    ba_shifted = mne.event.shift_time_events(ba_events, ids=[4], tshift=bashift, sfreq=raw.info['sfreq'])
+    pa_shifted = mne.event.shift_time_events(pa_events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq'])
+    fa_shifted = mne.event.shift_time_events(fa_events, ids=[16], tshift=fashift, sfreq=raw.info['sfreq'])
+    va_shifted = mne.event.shift_time_events(va_events, ids=[32], tshift=vashift, sfreq=raw.info['sfreq'])
+
+    # annotates the raw data with the shifted times
+    ba_annotations = mne.annotations_from_events(ba_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    pa_annotations = mne.annotations_from_events(pa_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    fa_annotations = mne.annotations_from_events(fa_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    va_annotations = mne.annotations_from_events(va_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
+    
+    # Combine shifted events back into one array
+    shifted_events = np.vstack((ba_events, pa_events, fa_events, va_events))
+    shifted_events = shifted_events[np.argsort(shifted_events[:, 0])]  # Sort events by time if needed
+
+    
+    # Set combined annotations on raw data
+    raw.set_annotations(ba_annotations)
+    raw.set_annotations(pa_annotations)
+    raw.set_annotations(fa_annotations)
+    raw.set_annotations(va_annotations)
+
+    
+    # Create a raw_meg object which excludes all non-meg channels
+    raw_meg = raw.pick_types(meg=True, exclude='bads')
+
+    # Apply annotations to raw_meg (with shifted times)
+    raw_meg.set_annotations(ba_annotations)
+    raw_meg.set_annotations(pa_annotations)
+    raw_meg.set_annotations(fa_annotations)
+    raw_meg.set_annotations(va_annotations)
+    
+    # Filter the raw data
+    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
+
+    # conditionally run ICA
+    if ICA:
+        # ICA Configuration
+        n_components = ICA_variance
+        method = 'picard'
+        max_iter = 1000
+        fit_params = dict(fastica_it=5)
+        random_state = 13
+
+        ica = mne.preprocessing.ICA(n_components=ICA_variance, 
+                                    method=method,
+                                    max_iter=max_iter,
+                                    fit_params=fit_params,
+                                    random_state=random_state)
+         # fit ICA on filtered data
+        ica.fit(raw_filtered)
+         # then tries to find the ecg artifacts in ica
+        ecg_epochs = mne.preprocessing.create_ecg_epochs(raw_filtered,
+                                                         reject=None,
+                                                         baseline=(None, -.02),
+                                                         tmin=-0.5,
+                                                         tmax=0.5)
+        ecg_evoked = ecg_epochs.average()
+        ecg_inds, ecg_scores = ica.find_bads_ecg(
+            ecg_epochs, method='ctps')
+
+        raw_filtered.load_data()
+        ica.plot_sources(raw, show_scrollbars=False)
+        ica.plot_components()
+        ica.plot_scores(ecg_scores)
+        ica.plot_sources(ecg_evoked)
+        ica.plot_overlay(ecg_evoked)
+        # apply ICA to raw data
+        raw_filtered = ica.apply(raw_filtered)
+        
+    # Print total number of events to compare to VA events
+    print(f"Total number of events for participant {participant_id}: {len(events)}")
+    
+    # Count the total number of each event
+    total_ba_events = np.sum(events[:, 2] == 4)
+    total_pa_events = np.sum(events[:, 2] == 8)
+    total_fa_events = np.sum(events[:, 2] == 16)
+    total_va_events = np.sum(events[:, 2] == 32)
+
+    # Print the total number of 'va' events
+    print(f"Total BA events: {total_ba_events}")
+    print(f"Total PA events: {total_pa_events}")
+    print(f"Total FA events: {total_fa_events}")
+    print(f"Total VA events: {total_va_events}")
+
+   # Initialize dictionaries to hold categorized events based on number of events
+    event_sequences_4_events = {
+        'ba_4_sequence': [],
+        'fa_4_sequence': [],
+        'va_4_sequence': []
+    }
+    event_sequences_5_events = {
+        'ba_5_sequence': [],
+        'fa_5_sequence': [],
+        'va_5_sequence': []
+    }
+    event_sequences_6_events = {
+        'ba_6_sequence': [],
+        'fa_6_sequence': [],
+        'va_6_sequence': []
+    }
+
+    # Iterate over events to extract sequences of 'ba', 'fa', and 'va' events
+    i = 0
+    while i < len(shifted_events):
+        event_type = shifted_events[i, 2]
+        sequence = [shifted_events[i].tolist()]
+
+        # Continue adding events to the sequence while they are consecutive 'ba', 'fa', or 'va' events
+        j = i + 1
+        while j < len(shifted_events) and shifted_events[j, 2] == event_type:
+            sequence.append(shifted_events[j].tolist())
+            j += 1
+
+        # Determine the number of events in the sequence
+        num_events = len(sequence)
+        if num_events == 4:
+            event_sequences_4_events[f'{mapping[event_type]}_4_sequence'].append(sequence)
+        elif num_events == 5:
+            event_sequences_5_events[f'{mapping[event_type]}_5_sequence'].append(sequence)
+        elif num_events == 6:
+            event_sequences_6_events[f'{mapping[event_type]}_6_sequence'].append(sequence)
+
+        # Move index past the current sequence to avoid re-processing
+        i = j
+
+
+
+# Print the number of sequences in each dictionary
+    print("Number of sequences in event_sequences_4_events:")
+    for key, value in event_sequences_4_events.items():
+        print(f"{key}: {len(value)} sequences")
+
+    print("\nNumber of sequences in event_sequences_5_events:")
+    for key, value in event_sequences_5_events.items():
+        print(f"{key}: {len(value)} sequences")
+
+    print("\nNumber of sequences in event_sequences_6_events:")
+    for key, value in event_sequences_6_events.items():
+        print(f"{key}: {len(value)} sequences")
+
+
+
+   
+    # Iterate through sequences with 4 events
+    for event_type, sequences in event_sequences_4_events.items():
+        for sequence in sequences:
+            if 'ba_4_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_ba_4'].append(pa_event)
+            elif 'fa_4_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_fa_4'].append(pa_event)
+            elif 'va_4_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_va_4'].append(pa_event)
+
+    # Iterate through sequences with 5 events
+    for event_type, sequences in event_sequences_5_events.items():
+        for sequence in sequences:
+            if 'ba_5_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_ba_5'].append(pa_event)
+            elif 'fa_5_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_fa_5'].append(pa_event)
+            elif 'va_5_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_va_5'].append(pa_event)
+
+    # Iterate through sequences with 6 events
+    for event_type, sequences in event_sequences_6_events.items():
+        for sequence in sequences:
+            if 'ba_6_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_ba_6'].append(pa_event)
+            elif 'fa_6_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_fa_6'].append(pa_event)
+            elif 'va_6_sequence' in event_type:
+                pa_event = sequence[-1]  # PA event is the last event in the sequence
+                categorized_events['pa_after_va_6'].append(pa_event)
+
+
+ #turn events to numpy array
+    pa_after_ba_4 = np.array(categorized_events['pa_after_ba_4'])
+    pa_after_ba_5 = np.array(categorized_events['pa_after_ba_5'])
+    pa_after_ba_6 = np.array(categorized_events['pa_after_ba_6'])
+    pa_after_fa_4 = np.array(categorized_events['pa_after_fa_4'])
+    pa_after_fa_5 = np.array(categorized_events['pa_after_fa_5'])
+    pa_after_fa_6 = np.array(categorized_events['pa_after_fa_6'])
+    pa_after_va_4 = np.array(categorized_events['pa_after_va_4'])
+    pa_after_va_5 = np.array(categorized_events['pa_after_va_5'])
+    pa_after_va_6 = np.array(categorized_events['pa_after_va_6'])
+
+    
+    # Create epochs from the events for the current participant
+    epochs_pa_after_ba_4 = mne.Epochs(raw_filtered, pa_after_ba_4, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_ba_5 = mne.Epochs(raw_filtered, pa_after_ba_5, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_ba_6 = mne.Epochs(raw_filtered, pa_after_ba_6, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_fa_4 = mne.Epochs(raw_filtered, pa_after_fa_4, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_fa_5 = mne.Epochs(raw_filtered, pa_after_fa_5, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_fa_6 = mne.Epochs(raw_filtered, pa_after_fa_6, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_va_4 = mne.Epochs(raw_filtered, pa_after_va_4, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')#in participant 3117 there was a strange error about event samples not being unique 
+    epochs_pa_after_va_5 = mne.Epochs(raw_filtered, pa_after_va_5, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+    epochs_pa_after_va_6 = mne.Epochs(raw_filtered, pa_after_va_6, tmin=tmin, tmax=tmax, preload=True)#, event_repeated='drop')
+
+
+            # Append epochs to the accumulated dataset
+    categorized_epochs['ba_4'].append(epochs_pa_after_ba_4)
+    categorized_epochs['ba_5'].append(epochs_pa_after_ba_5)
+    categorized_epochs['ba_6'].append(epochs_pa_after_ba_6)
+    categorized_epochs['fa_4'].append(epochs_pa_after_fa_4)
+    categorized_epochs['fa_5'].append(epochs_pa_after_fa_5)
+    categorized_epochs['fa_6'].append(epochs_pa_after_fa_6)
+    categorized_epochs['va_4'].append(epochs_pa_after_va_4)
+    categorized_epochs['va_5'].append(epochs_pa_after_va_5)
+    categorized_epochs['va_6'].append(epochs_pa_after_va_6)
+
+
+    # Print current state of all_pa_epochs after each participant
+    print(f"Current state of all epochs:")
+    for condition, epochs_list in categorized_epochs.items():
+        print(f"Condition: {condition}, Total epochs: {sum([len(e) for e in epochs_list])}")
+
+    del raw, raws, raw_filtered, epochs_pa_after_ba_4, epochs_pa_after_ba_5, epochs_pa_after_ba_6, epochs_pa_after_fa_4, epochs_pa_after_fa_5, epochs_pa_after_fa_6, epochs_pa_after_va_4, epochs_pa_after_va_5, epochs_pa_after_va_6
+
+
+
+
+# Initialize a dictionary to store ERPs for each condition
+evks = {}
+
+# Iterate through each condition in all_epochs
+for condition, epochs_list in categorized_epochs.items():
+    # Combine all epochs across participants for the current condition
+    combined_epochs = mne.concatenate_epochs(epochs_list)
+    
+    # Calculate the ERP (average across epochs)
+    evk = combined_epochs.average()
+    
+    # Store the ERP in the dictionary
+    evks[condition] = evk
+
+
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}')
+if not plot_directory.exists():
+    plot_directory.mkdir(parents=True)
+    
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+
+
+
+# Calculate total epochs for each condition
+epochs_ba_4 = sum([len(e) for e in categorized_epochs['ba_4']])
+epochs_ba_5 = sum([len(e) for e in categorized_epochs['ba_5']])
+epochs_ba_6 = sum([len(e) for e in categorized_epochs['ba_6']])
+epochs_fa_4 = sum([len(e) for e in categorized_epochs['fa_4']])
+epochs_fa_5 = sum([len(e) for e in categorized_epochs['fa_5']])
+epochs_fa_6 = sum([len(e) for e in categorized_epochs['fa_6']])
+epochs_va_4 = sum([len(e) for e in categorized_epochs['va_4']])
+epochs_va_5 = sum([len(e) for e in categorized_epochs['va_5']])
+epochs_va_6 = sum([len(e) for e in categorized_epochs['va_6']])
+
+# Create the condition_mapping dictionary with dynamically populated counts
+condition_mapping = {
+    'ba_4': f'1: {epochs_ba_4}',
+    'ba_5': f'2: {epochs_ba_5}',
+    'ba_6': f'3: {epochs_ba_6}',
+    'fa_4': f'4: {epochs_fa_4}',
+    'fa_5': f'5: {epochs_fa_5}',
+    'fa_6': f'6: {epochs_fa_6}',
+    'va_4': f'7: {epochs_va_4}',
+    'va_5': f'8: {epochs_va_5}',
+    'va_6': f'9: {epochs_va_6}'
+}
+
+
+# Color and linestyle dictionaries based on category and number suffix
+color_dict = {
+    'ba_4': 'lightblue',
+    'ba_5': 'royalblue', 
+    'ba_6': 'darkblue',
+    
+    'fa_4': 'limegreen',
+    'fa_5': 'forestgreen', 
+    'fa_6': 'darkgreen',
+    
+    'va_4': 'indianred',
+    'va_5': 'firebrick',
+    'va_6': 'darkred'
+}
+
+linestyle_dict = {
+    'ba_4': '-', 
+    'ba_5': '-', 
+    'ba_6': '-',
+    'fa_4': '-', 
+    'fa_5': '-', 
+    'fa_6': '-',
+    'va_4': '-', 
+    'va_5': '-', 
+    'va_6': '-'
+}
+
+# Convert evks dictionary into a format compatible with plot_compare_evokeds
+evokeds_dict = {key: [value] for key, value in evks.items()}
+
+# Plot all ERPs using MNE's plot_compare_evokeds function
+fig = mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_all_deviant_condition_sets_after_pa{onset_type}{ICA_file}{special}.pdf')
+
+
+# Example corrected color dictionary with valid hexadecimal codes
+color_dict = {
+    'ba_4': '#0000FF20',     # Blue
+    'ba_5': '#0000FF50',   # Blue with 50% transparency
+    'ba_6': '#0000FF',    # Blue
+
+    'fa_4': '#00800020',   # Green 
+    'fa_5': '#00800050',   # Green with 50% transparency
+    'fa_6': '#008000',    # Green with 12.5% transparency
+
+    'va_4': '#FF000020',     # Red
+    'va_5': '#FF000050',   # Red with 50% transparency
+    'va_6': '#FF0000'   # Red with 12.5% transparency
+}
+
+linestyle_dict = {
+    'ba_4': '-', 
+    'ba_5': '-', 
+    'ba_6': '-',
+    'fa_4': '-', 
+    'fa_5': '-', 
+    'fa_6': '-',
+    'va_4': '-', 
+    'va_5': '-', 
+    'va_6': '-'
+}
+
+# Convert evks dictionary into a format compatible with plot_compare_evokeds
+evokeds_dict = {key: [value] for key, value in evks.items()}
+
+# Plot all ERPs using MNE's plot_compare_evokeds function
+fig = mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_pa_after_deviants_grayscale{onset_type}{ICA_file}{special}.pdf')
+
+
+# Create evks_6 containing only BA, FA, and VA after six PAs
+evks_6 = {
+    'ba_6': evks['ba_6'],
+    'fa_6': evks['fa_6'],
+    'va_6': evks['va_6']
+}
+
+# Create color_dict and linestyle_dict specifically for evks_6
+color_dict_6 = {
+    'ba_6': 'blue',
+    'fa_6': 'green',
+    'va_6': 'red'
+}
+
+linestyle_dict_6 = {
+    'ba_6': '-',
+    'fa_6': '-',
+    'va_6': '-'
+}
+
+# Plot ERPs using MNE's plot_compare_evokeds function
+fig = mne.viz.plot_compare_evokeds(evks_6,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict_6,
+                             linestyles=linestyle_dict_6,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_3_pa_after_deviants{onset_type}{ICA_file}{special}.pdf')
