@@ -271,7 +271,7 @@ for participant_id in participant_ids:
     va_events_set = np.array(va_events_set)
 
 
-    
+    #epoch rejection
     if reject_bad_epochs:
         epochs_ba = mne.Epochs(raw_filtered, 
                                ba_events_set, 
@@ -342,7 +342,7 @@ for participant_id in participant_ids:
     evokeds = [ba_evoked, pa_evoked, fa_evoked, va_evoked]
 
 
-# Print the number of epochs in the PA evoked object
+#print the number of epochs in the PA evoked object
 #print(f"Number of epochs in PA evoked object: {pa_evoked.nave}")
     
     # ensure the output directory exists
