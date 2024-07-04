@@ -335,7 +335,6 @@ for participant_id in participant_ids:
     for category, events in categorized_events.items():
         print(f"{category}: {len(events)} events")
 
-    #the problem is here. At this point, there is a list outside the loop of all the correct event, the next snippet takes that list and then passes it to the epoch makers, but it retains the events from the previous 
     
  #turn events to numpy array
     pa_after_ba_4 = np.array(categorized_events['pa_after_ba_4'])
