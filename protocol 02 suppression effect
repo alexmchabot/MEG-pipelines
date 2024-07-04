@@ -379,3 +379,171 @@ for participant_id in participant_ids:
 
 
     del raw, raws, raw_filtered, epochs_pa_after_ba_4, epochs_pa_after_ba_5, epochs_pa_after_ba_6, epochs_pa_after_fa_4, epochs_pa_after_fa_5, epochs_pa_after_fa_6, epochs_pa_after_va_4, epochs_pa_after_va_5, epochs_pa_after_va_6
+
+# Initialize a dictionary to store ERPs for each condition
+evks = {}
+
+# Iterate through each condition in all_epochs
+for condition, epochs_list in categorized_epochs.items():
+    # Combine all epochs across participants for the current condition
+    combined_epochs = mne.concatenate_epochs(epochs_list)
+    
+    # Calculate the ERP (average across epochs)
+    evk = combined_epochs.average()
+    
+    # Store the ERP in the dictionary
+    evks[condition] = evk
+
+
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}')
+if not plot_directory.exists():
+    plot_directory.mkdir(parents=True)
+    
+# define file names for saving based on ICA variable
+ICA_file = "_ICA" if ICA else ""
+
+
+
+# Calculate total epochs for each condition
+epochs_ba_4 = sum([len(e) for e in categorized_epochs['ba_4']])
+epochs_ba_5 = sum([len(e) for e in categorized_epochs['ba_5']])
+epochs_ba_6 = sum([len(e) for e in categorized_epochs['ba_6']])
+epochs_fa_4 = sum([len(e) for e in categorized_epochs['fa_4']])
+epochs_fa_5 = sum([len(e) for e in categorized_epochs['fa_5']])
+epochs_fa_6 = sum([len(e) for e in categorized_epochs['fa_6']])
+epochs_va_4 = sum([len(e) for e in categorized_epochs['va_4']])
+epochs_va_5 = sum([len(e) for e in categorized_epochs['va_5']])
+epochs_va_6 = sum([len(e) for e in categorized_epochs['va_6']])
+
+# Create the condition_mapping dictionary with dynamically populated counts
+condition_mapping = {
+    'ba_4': f'1: {epochs_ba_4}',
+    'ba_5': f'2: {epochs_ba_5}',
+    'ba_6': f'3: {epochs_ba_6}',
+    'fa_4': f'4: {epochs_fa_4}',
+    'fa_5': f'5: {epochs_fa_5}',
+    'fa_6': f'6: {epochs_fa_6}',
+    'va_4': f'7: {epochs_va_4}',
+    'va_5': f'8: {epochs_va_5}',
+    'va_6': f'9: {epochs_va_6}'
+}
+
+
+# Color and linestyle dictionaries based on category and number suffix
+color_dict = {
+    'ba_4': 'lightblue',
+    'ba_5': 'royalblue', 
+    'ba_6': 'darkblue',
+    
+    'fa_4': 'limegreen',
+    'fa_5': 'forestgreen', 
+    'fa_6': 'darkgreen',
+    
+    'va_4': 'indianred',
+    'va_5': 'firebrick',
+    'va_6': 'darkred'
+}
+
+linestyle_dict = {
+    'ba_4': '-', 
+    'ba_5': '-', 
+    'ba_6': '-',
+    'fa_4': '-', 
+    'fa_5': '-', 
+    'fa_6': '-',
+    'va_4': '-', 
+    'va_5': '-', 
+    'va_6': '-'
+}
+
+# Convert evks dictionary into a format compatible with plot_compare_evokeds
+evokeds_dict = {key: [value] for key, value in evks.items()}
+
+# Plot all ERPs using MNE's plot_compare_evokeds function
+fig = mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_all_deviant_condition_sets_after_pa{onset_type}{ICA_file}{special}.pdf')
+
+# Example corrected color dictionary with valid hexadecimal codes
+color_dict = {
+    'ba_4': '#0000FF20',     # Blue
+    'ba_5': '#0000FF50',   # Blue with 50% transparency
+    'ba_6': '#0000FF',    # Blue
+
+    'fa_4': '#00800020',   # Green 
+    'fa_5': '#00800050',   # Green with 50% transparency
+    'fa_6': '#008000',    # Green with 12.5% transparency
+
+    'va_4': '#FF000020',     # Red
+    'va_5': '#FF000050',   # Red with 50% transparency
+    'va_6': '#FF0000'   # Red with 12.5% transparency
+}
+
+linestyle_dict = {
+    'ba_4': '-', 
+    'ba_5': '-', 
+    'ba_6': '-',
+    'fa_4': '-', 
+    'fa_5': '-', 
+    'fa_6': '-',
+    'va_4': '-', 
+    'va_5': '-', 
+    'va_6': '-'
+}
+
+# Convert evks dictionary into a format compatible with plot_compare_evokeds
+evokeds_dict = {key: [value] for key, value in evks.items()}
+
+# Plot all ERPs using MNE's plot_compare_evokeds function
+fig = mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_pa_after_deviants_grayscale{onset_type}{ICA_file}{special}.pdf')
+
+# Create evks_6 containing only BA, FA, and VA after six PAs
+evks_6 = {
+    'ba_6': evks['ba_6'],
+    'fa_6': evks['fa_6'],
+    'va_6': evks['va_6']
+}
+
+# Create color_dict and linestyle_dict specifically for evks_6
+color_dict_6 = {
+    'ba_6': 'blue',
+    'fa_6': 'green',
+    'va_6': 'red'
+}
+
+linestyle_dict_6 = {
+    'ba_6': '-',
+    'fa_6': '-',
+    'va_6': '-'
+}
+
+# Plot ERPs using MNE's plot_compare_evokeds function
+fig = mne.viz.plot_compare_evokeds(evks_6,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict_6,
+                             linestyles=linestyle_dict_6,
+                             title=f'{protocol} participants ({n}), {onset_type} onset{ICA_file} {special}',
+                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             #ylim=dict(mag=[0, 30])# set y-axis limits
+                                  ) 
+plt.savefig(f'{plot_directory}/ERPs_3_pa_after_deviants{onset_type}{ICA_file}{special}.pdf')
