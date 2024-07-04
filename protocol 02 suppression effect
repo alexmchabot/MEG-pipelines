@@ -1,4 +1,4 @@
-#this script categorizes PA events as a function of the number of BA, FA, and VA events which precede them. It epochs them, and plots them. 
+#this script categorizes PA events as a function of the number of BA, FA, and VA events which precede them. It epochs them, extracts ERPS, and plots them. 
 #This script works as intended as of 07/02/2024
 
 
