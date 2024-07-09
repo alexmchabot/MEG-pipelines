@@ -1,4 +1,6 @@
 #data extraction script protocol one only pa events. 
+#plots the events and saves the plot
+#works as intended as of 07/07/2024
 
 import os
 import pathlib
@@ -10,34 +12,38 @@ import mne
 
 # define protocol and onset type
 protocol = 'protocol01'
-onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
-date = 'July 01'   
+onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+date = 'July 04'   
 n = 'n=14'
 trigger_position = 0.000        # change this value to shift away from onset
-ICA = False                      # if False, skips ICA
-ICA_variance = 10              # either percent e.g. .95 or number of components e.g., 40
-reject_bad_epochs = False
+ICA = True                      # if False, skips ICA
+ICA_variance = .95              # either percent e.g. .95 or number of components e.g., 40
+reject_bad_epochs = True
+plot_show = False                                              # Change to True to display plots interactively
+# define the parameters for bad epochs
+reject_criteria = dict(mag=5000e-15) 
+flat_criteria = dict(mag=1e-17) 
 
 # define file names for saving based on ICA variable
 ICA_file = "_ICA" if ICA else ""
 special = '1000 ms'                                            # Unique save tag for deviations from usual parameters, normally empty
-plot_show = False                                              # Change to True to display plots interactively
 
-# list of participant IDs/ #of ICA components per participant at .95 variance
-participant_ids = ['R2830', #16
-                   'R2890', #24
-                   'R2896', #13, poor data
-                   'R2897', #18
-                   'R2900', #20 
-                   'R2906', #18
-                   'R2915', #14
-                   'R2968', #20
-                   'R2976', #17
-                   'R2996', #18, #poor data
-                   'R2997', #12
-                   'R3005', #21 weak signal? 
-                   'R3007', #15 line noise? 
-                   'R3008'  #10 really bad data, potential reject
+
+# list of participant IDs
+participant_ids = ['R2830', 
+                   'R2890', 
+                   'R2896', 
+                   'R2897', 
+                   'R2900',  
+                   'R2906', 
+                   'R2915', 
+                   'R2968', 
+                   'R2976', 
+                   'R2996', 
+                   'R2997', 
+                   'R3005', 
+                   'R3007', 
+                   'R3008'  
                   ]
 
 # mark bad channels
@@ -52,8 +58,8 @@ tmin = -0.2
 tmax = 1.0  
 
 # define the parameters for bad epochs
-reject_criteria = dict(mag=3500e-15)  # 3500-4000 fT seems best
-flat_criteria = dict(mag=1e-15)  # 1 fT
+reject_criteria = dict(mag=5000e-15)  # 3500-4000 fT seems best
+flat_criteria = dict(mag=1e-17)  # 1 fT
 
 # define subdirectory based on onset type
 subdirectory = "V_onset" if onset_type == 'vowel' else "C_onset"
@@ -69,9 +75,9 @@ output_dir.mkdir(parents=True, exist_ok=True)
 # define trigger shifts based on onset type
 def calculate_shifts(onset_type):
     if onset_type == 'vowel':
-        pashift = 0.125 - trigger_position
+        pashift = 0.130 - trigger_position
     elif onset_type == 'consonant':
-        pashift = 0.028 - trigger_position
+        pashift = 0.030 - trigger_position
     else:
         raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
     return pashift
@@ -104,8 +110,8 @@ for participant_id in participant_ids:
     raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
     raw = mne.concatenate_raws(raws)
 
-    # Ensure the sampling frequency is 1000 Hz
-    desired_sfreq = 1000
+    # Ensure the sampling frequency is 250 Hz
+    desired_sfreq = 250
     if raw.info['sfreq'] != desired_sfreq:
         print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
         raw = raw.resample(sfreq=desired_sfreq)  # Resample the raw object
@@ -155,10 +161,6 @@ for participant_id in participant_ids:
     
     # Filter the raw data
     raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
-
-     # Convert annotations back to events for filtered data, just for printing debugging, can delete both lines later
-    event_id_mapping = {'pa': 8}  # Map 'pa' annotation to event ID 8
-    events_filtered, _ = mne.events_from_annotations(raw_filtered, event_id=event_id_mapping)
     
     # conditionally run ICA
     if ICA:
@@ -331,7 +333,7 @@ for participant_id in participant_ids:
     for condition, epochs_list in all_pa_epochs.items():
         print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
 
-# after the loop, print the final state of all_pa_epochs
+# After the loop, you can print the final state of all_pa_epochs
 print("Final state of all_pa_epochs:")
 for condition, epochs_list in all_pa_epochs.items():
     print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
