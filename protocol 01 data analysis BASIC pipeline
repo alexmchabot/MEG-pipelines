@@ -1,5 +1,6 @@
 #this protocol epochs all BA, FA, and VA events. It epochs the forth PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
-
+#todo: time is not shifting. 
+#works as intended as of 7/07/2024
 
 import pathlib
 import numpy as np
@@ -10,39 +11,42 @@ import mne
 
 # define protocol and onset type
 protocol = 'protocol01'
-onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
 trigger_position = 0.000      # change this value to shift away from onset
-ICA = False                    # if False, skips ICA
-ICA_variance = 10            # either percent e.g. .95 or number of components e.g., 40
-reject_bad_epochs = False
+ICA = True                    # if False, skips ICA
+ICA_variance = .99            # either percent e.g. .95 or number of components e.g., 40
+reject_bad_epochs = True
+baseline = (None, 0)  # means from the first instant to t = 0
+special= ''
+
 
 # define the parameters for bad epochs
-reject_criteria = dict(mag=3500e-15)  # 3500-4000 fT seems best
-flat_criteria = dict(mag=1e-15)  # 1 fT
+reject_criteria = dict(mag=5000e-15) 
+flat_criteria = dict(mag=1e-17)  
 
-# list of participant IDs/ #of ICA components per participant at .95 variance
-participant_ids = ['R2830', #16
-                   'R2890', #24
-                   'R2896', #13, poor data
-                   'R2897', #18
-                   'R2900', #20 
-                   'R2906', #18
-                   'R2915', #14
-                   'R2968', #20 very messy data, potential reject. no kept epochs with reject thresholds
-                   'R2976', #17
-                   'R2996', #18, #poor data
-                   'R2997', #12 #all epochs rejected unless ICA is applied
-                   'R3005', #21 weak signal? 
-                   'R3007', #15 line noise? data is kind of disgusting, flat epoch rejecting rejects all epochs
-                   'R3008'  #10 really bad data, potential reject
+# list of participant IDs
+participant_ids = ['R2830', #data not bad, but no peak resolves out, big fa
+                   'R2890', #many ICA components, but nice data, good peak
+                   'R2896', #poor data, few components. Difficult to resolve a peak, but possible. Late big fa
+                   'R2897', #fine data, peak resolves, big fa @550 ms and on
+                   'R2900',  
+                   'R2906', #huge fa at 320 ms, then peak, very depressed PA post 300 ms
+                   'R2915', #nice peak, depressed pa falling after 250 ms, strong VA peak
+                   'R2968', #very messy data, potential reject. data rejected with epoch rejection
+                   'R2976', #strong peak, huge fa spike at peak. baselining mediocre, negative va spike
+                   'R2996', #ok data, nice VA
+                   'R2997', #massive, strange shape pa and fa at 200 ms, redo this one? 
+                   'R3005', #weak signal? bad baselining, good peak, huge ba spike, not much pa depression
+                   'R3007', #metal fillings, data is kind of disgusting, flat epoch rejecting rejects all epochs
+                   'R3008'  #really bad data, truly no idea what ths is, potential reject
                   ]
 
 # mark bad channels
 bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
 
 # define the parameters for the filter
-l_freq = .01
-h_freq = 30
+l_freq = 1
+h_freq = 25
 
 # define the time limits for the epochs
 tmin = -0.2
@@ -64,19 +68,24 @@ output_dir.mkdir(parents=True, exist_ok=True)
 # define trigger shifts based on onset type
 def calculate_shifts(onset_type):
     if onset_type == 'vowel':
-        bashift = 0.195-trigger_position
+        bashift = 0.190-trigger_position
         pashift = 0.130-trigger_position
-        fashift = 0.195-trigger_position
+        fashift = 0.200-trigger_position
         vashift = 0.225-trigger_position
     elif onset_type == 'consonant':
-        bashift = 0.159-trigger_position
-        pashift = 0.028-trigger_position
-        fashift = 0.073-trigger_position
-        vashift = 0.129-trigger_position
+        bashift = 0.155-trigger_position
+        pashift = 0.030-trigger_position
+        fashift = 0.060-trigger_position
+        vashift = 0.160-trigger_position
     else:
         raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
     return bashift, pashift, fashift, vashift
     
+# Initialize counters for each epoch type
+total_epochs_count = {'ba': 0, 'pa': 0, 'fa': 0, 'va': 0}
+
+#initialize counter to get epoch counts
+total_dropped_epochs = {'ba': 0, 'pa': 0, 'fa': 0, 'va': 0}
 
 for participant_id in participant_ids:
     # load and concatenate raws
@@ -88,8 +97,8 @@ for participant_id in participant_ids:
     raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
     raw = mne.concatenate_raws(raws)
 
-    # ensure the sampling frequency is 1000 Hz
-    desired_sfreq = 1000
+    # ensure the sampling frequency is 250 Hz
+    desired_sfreq = 250
     if raw.info['sfreq'] != desired_sfreq:
         print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
         raw.resample(sfreq=desired_sfreq)
@@ -100,7 +109,7 @@ for participant_id in participant_ids:
      # Find events
     events = mne.find_events(raw)
     mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
-
+        
     # Shift times for each event directly in the raw data
     bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
 
@@ -121,8 +130,7 @@ for participant_id in participant_ids:
     raw.set_annotations(pa_annotations)
     raw.set_annotations(fa_annotations)
     raw.set_annotations(va_annotations)
-
-    #print shit for sanity check
+    
     # Print original events
     print("Original events:")
     for event_id, event_type in mapping.items():
@@ -204,8 +212,6 @@ for participant_id in participant_ids:
         # apply ICA to raw data
         raw_filtered = ica.apply(raw_filtered)
 
-
-    #this snippet extracts the X numbered PA event in sequences of PA
     # initialize empty arrays/lists for each event type
     ba_events_set = []
     fa_events_set = []
@@ -214,14 +220,20 @@ for participant_id in participant_ids:
 
 
     
-    # iterate through events and store them in respective arrays
-    for event in events:
+    # Iterate through events and store them in respective arrays
+    for event in ba_shifted:
         event_code = event[2]
         if event_code == 4:
             ba_events_set.append(event)
-        elif event_code == 16:
+
+    for event in fa_shifted:
+        event_code = event[2]
+        if event_code == 16:
             fa_events_set.append(event)
-        elif event_code == 32:
+
+    for event in va_shifted:
+        event_code = event[2]
+        if event_code == 32:
             va_events_set.append(event)
 
     # Initialize lists to store sequences of 'pa' events
@@ -249,8 +261,10 @@ for participant_id in participant_ids:
         else:
             i += 1
 
-    # Initialize lists to store events for each PA occurrence for the current participant
 
+
+    
+    # Initialize lists to store events for each PA occurrence for the current participant
     pa4_events = []
 
     # Iterate through sequences and store events in respective lists
@@ -260,8 +274,8 @@ for participant_id in participant_ids:
                 pa4_events.append(event)
 
 
-# Print the number of 4th PA events
-#print(f"Number of 4th PA events: {len(pa4_events)}")
+    # Print the number of 4th PA events
+    #print(f"Number of 4th PA events: {len(pa4_events)}")
             
 
     # vonvert lists to NumPy arrays if needed
@@ -271,7 +285,7 @@ for participant_id in participant_ids:
     va_events_set = np.array(va_events_set)
 
 
-    #epoch rejection
+    
     if reject_bad_epochs:
         epochs_ba = mne.Epochs(raw_filtered, 
                                ba_events_set, 
@@ -280,6 +294,7 @@ for participant_id in participant_ids:
                                tmax=tmax, 
                                reject=reject_criteria, 
                                flat=flat_criteria, 
+                               baseline=baseline, 
                                preload=True)
         epochs_pa = mne.Epochs(raw_filtered, 
                                pa_04_event_set, 
@@ -287,7 +302,8 @@ for participant_id in participant_ids:
                                tmin=tmin,
                                tmax=tmax, 
                                reject=reject_criteria, 
-                               flat=flat_criteria, 
+                               flat=flat_criteria,
+                               baseline=baseline, 
                                preload=True)
         epochs_fa = mne.Epochs(raw_filtered, 
                                fa_events_set, 
@@ -295,7 +311,8 @@ for participant_id in participant_ids:
                                tmin=tmin, 
                                tmax=tmax, 
                                reject=reject_criteria, 
-                               flat=flat_criteria, 
+                               flat=flat_criteria,
+                               baseline=baseline, 
                                preload=True)
         epochs_va = mne.Epochs(raw_filtered, 
                                va_events_set, 
@@ -303,32 +320,51 @@ for participant_id in participant_ids:
                                tmin=tmin, 
                                tmax=tmax, 
                                reject=reject_criteria, 
-                               flat=flat_criteria, 
-                            
+                               flat=flat_criteria,
+                               baseline=baseline, 
                                preload=True)
-    else:
-        epochs_ba = mne.Epochs(raw_filtered, ba_shifted, {'ba': 4}, tmin=tmin, tmax=tmax, preload=True)
-        epochs_pa = mne.Epochs(raw_filtered, pa_04_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, preload=True)
-        epochs_fa = mne.Epochs(raw_filtered, fa_shifted, {'fa': 16}, tmin=tmin, tmax=tmax, preload=True)
-        epochs_va = mne.Epochs(raw_filtered, va_shifted, {'va': 32}, tmin=tmin, tmax=tmax, preload=True) 
+        # Print dropped epochs for each participant
+        dropped_epochs = {
+            'ba': len(epochs_ba.drop_log),
+            'pa': len(epochs_pa.drop_log),
+            'fa': len(epochs_fa.drop_log),
+            'va': len(epochs_va.drop_log)
+        }
+        print(f"{participant_id}: Dropped epochs - ba: {dropped_epochs['ba']}, pa: {dropped_epochs['pa']}, fa: {dropped_epochs['fa']}, va: {dropped_epochs['va']}")
 
+
+        
+        # Update total dropped epochs
+        total_dropped_epochs['ba'] += dropped_epochs['ba']
+        total_dropped_epochs['pa'] += dropped_epochs['pa']
+        total_dropped_epochs['fa'] += dropped_epochs['fa']
+        total_dropped_epochs['va'] += dropped_epochs['va']
+    
+    else:
+        epochs_ba = mne.Epochs(raw_filtered, ba_events_set, {'ba': 4}, tmin=tmin, tmax=tmax, preload=True)
+        epochs_pa = mne.Epochs(raw_filtered, pa_04_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, preload=True)
+        epochs_fa = mne.Epochs(raw_filtered, fa_events_set, {'fa': 16}, tmin=tmin, tmax=tmax, preload=True)
+        epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, preload=True) 
 
 # Print the number of epochs in epochs_pa
 #print(f"Number of epochs in epochs_pa: {len(epochs_pa)}")
 
+        # Count epochs and update total counts, sanity check to make cross-check number of epochs per category to be plotted
+    total_epochs_count['ba'] += len(epochs_ba)
+    total_epochs_count['pa'] += len(epochs_pa)
+    total_epochs_count['fa'] += len(epochs_fa)
+    total_epochs_count['va'] += len(epochs_va)
+    
 # Check if epochs were dropped and continue analysis accordingly
     if len(epochs_ba) == 0:
         print(f"No 'ba' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
         continue
-
     if len(epochs_pa) == 0:
         print(f"No 'pa' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
         continue
-
     if len(epochs_fa) == 0:
         print(f"No 'fa' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
         continue
-
     if len(epochs_va) == 0:
         print(f"No 'va' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
         continue
@@ -342,8 +378,8 @@ for participant_id in participant_ids:
     evokeds = [ba_evoked, pa_evoked, fa_evoked, va_evoked]
 
 
-#print the number of epochs in the PA evoked object
-#print(f"Number of epochs in PA evoked object: {pa_evoked.nave}")
+    # Print the number of epochs in the PA evoked object
+    #print(f"Number of epochs in PA evoked object: {pa_evoked.nave}")
     
     # ensure the output directory exists
     output_dir = pathlib.Path(f'../../out_data/{protocol}/{subdirectory}')
@@ -356,12 +392,40 @@ for participant_id in participant_ids:
     # save epochs data
     epochs_data = {"ba": epochs_ba, "va": epochs_va, "fa": epochs_fa, "pa": epochs_pa}
     for event_type, epoch_data in epochs_data.items():
-        epoch_data.save(output_dir / f'{participant_id}_epochs_{event_type}{file_suffix}{reject_suffix}-epo.fif', overwrite=True)
+        epoch_data.save(output_dir / f'{participant_id}_epochs_{event_type}{file_suffix}{reject_suffix}{special}-epo.fif', overwrite=True)
     
     # save evoked data
-    mne.write_evokeds(output_dir / f'{participant_id}_evokeds-ave{file_suffix}{reject_suffix}.fif', list(evokeds), overwrite=True)
+    mne.write_evokeds(output_dir / f'{participant_id}_evokeds_{file_suffix}{reject_suffix}{special}-ave.fif', list(evokeds), overwrite=True)
 
     if ICA:
+        
+        # Define info for the plots
+        color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
+        linestyle_dict = {'pa': '-', 'ba': '-', 'fa': '-', 'va': '-'}
+
+        #all channels for all participants
+        fig = mne.viz.plot_compare_evokeds(evokeds,
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                                ) 
+        plt.show()
+        plt.close()
+
+        #all channels for all participants
+        fig = mne.viz.plot_compare_evokeds(evokeds,
+                             combine='mean',
+                             ci=False,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                                  ) 
+        plt.show()
+        plt.close()
+
         # produce topographic map to check eye activity
         #create a 3x6 grid of subplots, longer time scale than above
         fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
@@ -385,7 +449,18 @@ for participant_id in participant_ids:
         plt.subplots_adjust(hspace=0.4, wspace=0.2)
         plt.show()
         plt.close()
+
     
     # delete variables to free up memory
     del raw, raw_meg, raw_filtered, epochs_ba, epochs_pa, epochs_fa, epochs_va
     del ba_evoked, pa_evoked, fa_evoked, va_evoked, evokeds
+
+# Print the total number of each kind of epoch across all participants
+print("Total number of each kind of epoch across all participants:")
+for event_type, count in total_epochs_count.items():
+    print(f"{event_type}: {count} epochs")
+
+if reject_bad_epochs: 
+    # Print total dropped epochs across all participants
+    print("Total dropped epochs across all participants:")
+    print(f"ba: {total_dropped_epochs['ba']}, pa: {total_dropped_epochs['pa']}, fa: {total_dropped_epochs['fa']}, va: {total_dropped_epochs['va']}")
