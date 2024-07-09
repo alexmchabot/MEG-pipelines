@@ -1,5 +1,5 @@
 #this script categorizes PA events as a function of the number of BA, FA, and VA events which precede them. It epochs them, extracts ERPS, and plots them. 
-#This script works as intended as of 07/02/2024
+#This script works as intended as of 07/07/2024
 
 
 import pathlib
@@ -12,20 +12,22 @@ import mne
 # define protocol and onset type
 protocol = 'protocol02'
 onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
-date = 'June 22'   
+date = 'July 09'   
 n = 'n=15'
 specific_case = 'suppression'
 trigger_position = 0.000      # change this value to shift away from onset
 ICA = True                    # if False, skips ICA
 ICA_variance = .98            # either percent e.g. .95 or number of components e.g., 40
-reject_bad_epochs = False
+reject_bad_epochs = True
 baseline = (None, 0)  # means from the first instant to t = 0
 
 # define file names for saving based on ICA variable
 ICA_file = "_ICA" if ICA else ""
 special = '1000 ms'                                            # Unique save tag for deviations from usual parameters, normally empty
 plot_show = False                                              # Change to True to display plots interactively
-
+# define the parameters for bad epochs
+reject_criteria = dict(mag=5000e-15) 
+flat_criteria = dict(mag=1e-17) 
 
 # list of participant IDs
 participant_ids = ['R3027', #1
@@ -57,8 +59,8 @@ tmin = -0.2
 tmax = 1.0  
 
 # Define the parameters for bad epochs
-reject_criteria = dict(mag=3000e-15)  # 3500-4000 fT seems best
-flat_criteria = dict(mag=1e-15)  # 1 fT
+reject_criteria = dict(mag=5000e-15)  # 3500-4000 fT seems best
+flat_criteria = dict(mag=1e-17)  # 1 fT
 
 # Define subdirectory based on onset type
 subdirectory = "suppression" 
@@ -126,8 +128,8 @@ for participant_id in participant_ids:
     raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
     raw = mne.concatenate_raws(raws)
 
-    # Ensure the sampling frequency is 1000 Hz
-    desired_sfreq = 1000
+    # downsample frequency to 250 Hz
+    desired_sfreq = 250
     if raw.info['sfreq'] != desired_sfreq:
         print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
         raw.resample(sfreq=desired_sfreq)
@@ -393,9 +395,17 @@ for participant_id in participant_ids:
     for condition, epochs_list in categorized_epochs.items():
         print(f"Condition: {condition}, Total epochs: {sum([len(e) for e in epochs_list])}")
 
+    # save epochs data
+    epochs_data = {"ba_4": epochs_pa_after_ba_4, "ba_5": epochs_pa_after_ba_5, "ba_6":epochs_pa_after_ba_6, "fa_4": epochs_pa_after_fa_4, "fa_5": epochs_pa_after_fa_5, "fa_6": epochs_pa_after_fa_6, "va_4":epochs_pa_after_va_4, "va_5": epochs_pa_after_va_5, "va_6": epochs_pa_after_va_6}
+    for event_type, epoch_data in epochs_data.items():
+        epoch_data.save(output_dir / f'{participant_id}_epochs_{event_type}{special}-epo.fif', overwrite=True)
 
-
+    
     del raw, raws, raw_filtered, epochs_pa_after_ba_4, epochs_pa_after_ba_5, epochs_pa_after_ba_6, epochs_pa_after_fa_4, epochs_pa_after_fa_5, epochs_pa_after_fa_6, epochs_pa_after_va_4, epochs_pa_after_va_5, epochs_pa_after_va_6
+
+
+
+
 
 # Initialize a dictionary to store ERPs for each condition
 evks = {}
