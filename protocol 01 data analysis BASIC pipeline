@@ -1,6 +1,6 @@
-#this protocol epochs all BA, FA, and VA events. It epochs the forth PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
+this protocol epochs all BA, FA, and VA events. It epochs the forth PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
 #todo: time is not shifting. 
-#works as intended as of 7/07/2024
+#works as intended as of 7/08/2024
 
 import pathlib
 import numpy as np
@@ -9,35 +9,37 @@ matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import mne
 
+#date last run: 10/9/2024
+
 # define protocol and onset type
 protocol = 'protocol01'
-onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
 trigger_position = 0.000      # change this value to shift away from onset
 ICA = True                    # if False, skips ICA
-ICA_variance = .99            # either percent e.g. .95 or number of components e.g., 40
+ICA_variance = 40            # either percent e.g. .95 or number of components e.g., 40
 reject_bad_epochs = True
 baseline = (None, 0)  # means from the first instant to t = 0
 special= ''
 
 
 # define the parameters for bad epochs
-reject_criteria = dict(mag=5000e-15) 
-flat_criteria = dict(mag=1e-17)  
+reject_criteria = dict(mag=3000e-15) # 3000 fT
+flat_criteria = dict(mag=1e-15)  # 1 fT
 
 # list of participant IDs
-participant_ids = ['R2830', #data not bad, but no peak resolves out, big fa
-                   'R2890', #many ICA components, but nice data, good peak
-                   'R2896', #poor data, few components. Difficult to resolve a peak, but possible. Late big fa
-                   'R2897', #fine data, peak resolves, big fa @550 ms and on
-                   'R2900',  
-                   'R2906', #huge fa at 320 ms, then peak, very depressed PA post 300 ms
-                   'R2915', #nice peak, depressed pa falling after 250 ms, strong VA peak
+participant_ids = ['R2830', #data not bad
+                   'R2890', #nice data, good peak
+                   'R2896', #noisy? data, difficult to resolve a peak, but possible.
+                   'R2897', #fine data, peak resolves,
+                   'R2900', #fine data
+                   'R2906', #gigantic fa, very depressed PA post 300 ms, ica 23 and 9 are strange, maybe should be excluded 
+                   'R2915', #nice peak, depressed pa falling after 250 ms, 14 & 20 a little off
                    'R2968', #very messy data, potential reject. data rejected with epoch rejection
-                   'R2976', #strong peak, huge fa spike at peak. baselining mediocre, negative va spike
+                   'R2976', #strong peak, huge fa spike at peak. baselining mediocre, negative va spike, 26 is sneaky
                    'R2996', #ok data, nice VA
-                   'R2997', #massive, strange shape pa and fa at 200 ms, redo this one? 
-                   'R3005', #weak signal? bad baselining, good peak, huge ba spike, not much pa depression
-                   'R3007', #metal fillings, data is kind of disgusting, flat epoch rejecting rejects all epochs
+                   'R2997', #massive, strange shape pa and fa at 200 ms, 7 should be excluded 
+                   'R3005', #huge ba spike, not much pa depression
+                   #'R3007', #metal fillings, data is kind of disgusting, flat epoch rejecting rejects all epochs
                    'R3008'  #really bad data, truly no idea what ths is, potential reject
                   ]
 
@@ -49,8 +51,8 @@ l_freq = 1
 h_freq = 25
 
 # define the time limits for the epochs
-tmin = -0.2
-tmax = 1.0  
+tmin = -0.1
+tmax = 0.8  
 
 
 
@@ -341,10 +343,10 @@ for participant_id in participant_ids:
         total_dropped_epochs['va'] += dropped_epochs['va']
     
     else:
-        epochs_ba = mne.Epochs(raw_filtered, ba_events_set, {'ba': 4}, tmin=tmin, tmax=tmax, preload=True)
-        epochs_pa = mne.Epochs(raw_filtered, pa_04_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, preload=True)
-        epochs_fa = mne.Epochs(raw_filtered, fa_events_set, {'fa': 16}, tmin=tmin, tmax=tmax, preload=True)
-        epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, preload=True) 
+        epochs_ba = mne.Epochs(raw_filtered, ba_events_set, {'ba': 4}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa = mne.Epochs(raw_filtered, pa_04_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_fa = mne.Epochs(raw_filtered, fa_events_set, {'fa': 16}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True) 
 
 # Print the number of epochs in epochs_pa
 #print(f"Number of epochs in epochs_pa: {len(epochs_pa)}")
@@ -410,6 +412,7 @@ for participant_id in participant_ids:
                              show_sensors='upper right',
                              colors=color_dict,
                              linestyles=linestyle_dict,
+                             title=f'{participant_id} {onset_type} onset'
                                 ) 
         plt.show()
         plt.close()
@@ -422,6 +425,7 @@ for participant_id in participant_ids:
                              show_sensors='upper right',
                              colors=color_dict,
                              linestyles=linestyle_dict,
+                             title=f'{participant_id} {onset_type} onset'
                                   ) 
         plt.show()
         plt.close()
@@ -439,7 +443,7 @@ for participant_id in participant_ids:
         #plot the third topographic map on the bottom subplot
         va_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
         #add a caption to the figure
-        fig.suptitle(f'MEG Topographic Plots: 200-450 ms, {onset_type} onset')
+        fig.suptitle(f'{participant_id} {onset_type} onset')
         #set the titles for each subplot row
         fig.text(0.5, 0.9, 'BA evoked', ha='center', fontsize=12)
         fig.text(0.5, 0.68, 'PA evoked', ha='center', fontsize=12)
