@@ -297,3 +297,103 @@ mne.viz.plot_compare_evokeds(evks,
                              title=f'All participants ({n}): deviant conditions, left hemisphere channels',
                              show=True
                              )
+
+
+#channel selection, plot only dipole on left hemisphere by looking for highest absolute amplitude channels in left hemisphere
+
+# Define values for cropping the evoked data to the time span of interest
+crop_min = 0.170  # Start time for cropping
+crop_max = 0.350  # End time for cropping
+
+# Initialize empty lists to store cropped evoked objects
+evks_crop_ba = []
+evks_crop_pa = []
+evks_crop_fa = []
+evks_crop_va = []
+
+# Crop the evoked objects for each condition
+for evoked in evks['ba']:
+    evks_crop_ba.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+for evoked in evks['pa']:
+    evks_crop_pa.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+for evoked in evks['fa']:
+    evks_crop_fa.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+for evoked in evks['va']:
+    evks_crop_va.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+# Combine the cropped evoked objects into single evoked objects for each condition
+evks_crop_ba = mne.combine_evoked(evks_crop_ba, weights='equal')
+evks_crop_pa = mne.combine_evoked(evks_crop_pa, weights='equal')
+evks_crop_fa = mne.combine_evoked(evks_crop_fa, weights='equal')
+evks_crop_va = mne.combine_evoked(evks_crop_va, weights='equal')
+
+# Now combine all evoked conditions into a single evoked object
+evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_pa, evks_crop_fa, evks_crop_va], weights='equal')
+
+# Get the channel names for the left hemisphere (based on negative x-coordinate)
+left_hemisphere_chs = [ch_name for ch_name, pos in zip(evks_crop.ch_names, evks_crop.info['chs']) if pos['loc'][0] < 0]
+
+# Get the indices of the left hemisphere channels
+left_hemi_indices = [evks_crop.ch_names.index(ch) for ch in left_hemisphere_chs]
+
+# Check if any left hemisphere channels were found
+if not left_hemi_indices:
+    print("No left hemisphere channels found for plotting.")
+else:
+    # Calculate the max and min amplitudes for the left hemisphere channels only
+    max_amps_left = np.max(evks_crop.data[left_hemi_indices, :], axis=1)
+    min_amps_left = np.min(evks_crop.data[left_hemi_indices, :], axis=1)
+    
+    # Sort the left hemisphere channels by maximum and minimum amplitudes
+    sorted_max_indices = np.argsort(max_amps_left)[-10:][::-1]  # Indices for highest amplitudes
+    sorted_min_indices = np.argsort(min_amps_left)[:10]  # Indices for lowest amplitudes
+    
+    # Select the corresponding channel indices from left_hemi_indices
+    highest_channels_left = [left_hemi_indices[i] for i in sorted_max_indices]
+    lowest_channels_left = [left_hemi_indices[i] for i in sorted_min_indices]
+    
+    # Print the channel names and amplitudes
+    print('Left hemisphere channels with highest amplitudes:')
+    for i, ch in enumerate(highest_channels_left):
+        print(f'{i+1}. {evks_crop.ch_names[ch]}: {max_amps_left[sorted_max_indices[i]]:.3f}')
+    
+    print('\nLeft hemisphere channels with lowest amplitudes:')
+    for i, ch in enumerate(lowest_channels_left):
+        print(f'{i+1}. {evks_crop.ch_names[ch]}: {min_amps_left[sorted_min_indices[i]]:.3f}')
+    
+    # Combine the highest and lowest channels and ensure no duplicates
+    peak_channels_left = list(set(highest_channels_left) | set(lowest_channels_left))
+    
+    # Plot the evoked responses for the extreme left hemisphere channels
+    evks_crop.plot(exclude='bads', picks=peak_channels_left, window_title='Evoked Responses (Left Hemisphere)', show=True)
+
+mne.viz.plot_compare_evokeds(evks,
+                             ci=False,
+                             combine='gfp',
+                             picks=peak_channels_left,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'All participants ({n}): deviant conditions, most active left hemisphere channels',
+                             show=plot_show
+                             )
+plt.savefig(f'{plot_directory}/ERP_most_active_left_hemisphere_chans_{onset_type}{ICA_file}{special}{reject_file}_ERP_set.pdf')
+plt.close()
+
+mne.viz.plot_compare_evokeds(evks,
+                             ci=.95,
+                             combine='gfp',
+                             picks=peak_channels_left,
+                             legend='upper left',
+                             show_sensors='upper right',
+                             colors=color_dict,
+                             linestyles=linestyle_dict,
+                             title=f'All participants ({n}): deviant conditions, most active left hemisphere channels',
+                             show=plot_show
+                             )
+plt.savefig(f'{plot_directory}/ERP_most_active_left_hemisphere_chans_{onset_type}{ICA_file}{special}{reject_file}_ERP_set_CI_95.pdf')
+plt.close()
