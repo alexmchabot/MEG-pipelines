@@ -1,15 +1,15 @@
-this protocol epochs all BA, FA, and VA events. It epochs the forth PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
-#todo: time is not shifting. 
-#works as intended as of 7/08/2024
+#this protocol epochs all BA, FA, and VA events. It epochs a single PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
+#works as intended as of 10/12/2024
 
 import pathlib
 import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 import mne
 
-#date last run: 10/9/2024
+#date last run: 10/12/2024
 
 # define protocol and onset type
 protocol = 'protocol01'
@@ -21,30 +21,56 @@ reject_bad_epochs = True
 baseline = (None, 0)  # means from the first instant to t = 0
 special= ''
 
+pa_epoch_to_categorize = 5
 
 # define the parameters for bad epochs
-reject_criteria = dict(mag=3000e-15) # 3000 fT
-flat_criteria = dict(mag=1e-15)  # 1 fT
+reject_criteria = dict(mag=5000e-15) 
+flat_criteria = dict(mag=1e-18) #from 1e-15
 
 # list of participant IDs
-participant_ids = ['R2830', #data not bad
-                   'R2890', #nice data, good peak
-                   'R2896', #noisy? data, difficult to resolve a peak, but possible.
-                   'R2897', #fine data, peak resolves,
-                   'R2900', #fine data
-                   'R2906', #gigantic fa, very depressed PA post 300 ms, ica 23 and 9 are strange, maybe should be excluded 
-                   'R2915', #nice peak, depressed pa falling after 250 ms, 14 & 20 a little off
-                   'R2968', #very messy data, potential reject. data rejected with epoch rejection
-                   'R2976', #strong peak, huge fa spike at peak. baselining mediocre, negative va spike, 26 is sneaky
-                   'R2996', #ok data, nice VA
-                   'R2997', #massive, strange shape pa and fa at 200 ms, 7 should be excluded 
-                   'R3005', #huge ba spike, not much pa depression
-                   #'R3007', #metal fillings, data is kind of disgusting, flat epoch rejecting rejects all epochs
-                   'R3008'  #really bad data, truly no idea what ths is, potential reject
+participant_ids = ['R2830', #
+                   'R2890', #
+                   'R2896', #
+                   'R2897', #
+                   'R2900', #
+                   'R2906', #
+                   'R2915', #
+                   'R2968', #
+                   'R2976', #
+                   'R2996', #
+                   'R2997', #
+                   'R3005', #
+                   'R3007', #
+                   'R3008'  #
                   ]
 
 # mark bad channels
 bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
+#bad_channels_dict = {
+#    'R2896': ['MEG 001', 'MEG 002', 'MEG 003', 'MEG 004', 'MEG 005', 'MEG 006', 'MEG 007', 'MEG 011', 'MEG 012', 'MEG 013', 'MEG 014', 'MEG 015', 'MEG 016', 'MEG 017', 'MEG 018', 'MEG 019', 'MEG 022', 'MEG 025', 'MEG 026', 'MEG 027', 'MEG 028', 'MEG 029', 'MEG 030', 'MEG 031', 'MEG 032', 'MEG 033', 'MEG 034', 'MEG 036', 'MEG 038', 'MEG 039', 'MEG 040', 'MEG 042', 'MEG 044', 'MEG 045', 'MEG 047', 'MEG 050', 'MEG 051', 'MEG 052', 'MEG 054', 'MEG 055', 'MEG 056', 'MEG 086', 'MEG 057', 'MEG 058', 'MEG 060', 'MEG 061', 'MEG 062', 'MEG 063', 'MEG 064', 'MEG 066', 'MEG 067', 'MEG 069', 'MEG 070', 'MEG 071', 'MEG 073', 'MEG 075', 'MEG 076', 'MEG 080', 'MEG 081', 'MEG 082', 'MEG 092', 'MEG 095', 'MEG 097', 'MEG 098', 'MEG 100', 'MEG 101', 'MEG 122', 'MEG 123', 'MEG 124', 'MEG 125', 'MEG 127', 'MEG 141', 'MEG 142', 'MEG 144', 'MEG 145'],
+#    'R2968': ['MEG 026', 'MEG 054', 'MEG 056', 'MEG 086', 'MEG 057', 'MEG 144'],
+#    'R3007': ['MEG 004', 'MEG 026', 'MEG 030', 'MEG 039', 'MEG 040', 'MEG 051', 'MEG 056', 'MEG 086', 'MEG 059', 'MEG 061', 'MEG 062', 'MEG 065', 'MEG 067', 'MEG 072', 'MEG 080', 'MEG 088', 'MEG 090', 'MEG 096', 'MEG 099', 'MEG 103', 'MEG 104', 'MEG 105', 'MEG 106', 'MEG 111', 'MEG 112', 'MEG 113', 'MEG 115', 'MEG 130', 'MEG 132', 'MEG 139', 'MEG 145', 'MEG 149', 'MEG 151', 'MEG 152', 'MEG 154', 'MEG 157']
+#}
+
+
+# Define participant IDs and their corresponding components to exclude
+participant_components = {
+    'R2830': [0, 1, 2, 3, 6, 10, 19, 27, 28, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R2890': [0, 1, 2, 3, 6, 15, 16, 30, 36, 34, 35, 37, 38, 39, 33, 31, 32],
+    'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15, 16, 20, 22, 25, 24, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #!
+    'R2897': [0, 1, 2, 3, 4, 5, 6, 15, 24, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R2900': [0, 1, 2, 3, 10, 15, 17, 25, 28, 37, 35, 34, 36, 38, 39], 
+    'R2906': [0, 1, 2, 3, 4, 5, 6, 9, 18, 19, 23, 25, 27, 29, 30, 33, 34, 35, 36, 37, 38, 39],
+    'R2915': [0, 1, 2, 3, 5, 9, 12, 13, 14, 20, 25, 26, 28, 30, 32, 36, 37, 38, 39],
+    'R2968': [0, 1, 2, 4, 5, 6, 7, 8, 10, 15, 16, 18, 20, 21, 22, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #reject 
+    'R2976': [0, 1, 2, 3, 10, 20, 26, 27, 29, 32, 33, 34, 35, 36, 38, 37, 39],
+    'R2996': [0, 1, 2, 3, 4, 6, 9, 10, 33, 30, 32, 34, 35, 36, 37, 38, 39],
+    'R2997': [0, 1, 2, 3, 4, 5, 7, 11, 14, 15, 17, 18, 19, 21, 23, 27, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #what is this massive spike at @ 200? upper left?
+    'R3005': [0, 1, 2, 3, 4, 5, 6, 8, 7, 27, 29, 33, 34, 35, 36, 37, 38, 39],
+    'R3007': [0, 1, 2, 3, 4, 8, 9, 14, 18, 32, 33, 34, 35, 36, 38, 39, 37], #reject
+    'R3008': [0, 1, 2, 3, 4, 6, 12, 14, 15, 16, 20, 22, 31, 32, 33, 34, 35, 36, 37, 38, 39], #far upper right blob
+}
+
 
 # define the parameters for the filter
 l_freq = 1
@@ -54,7 +80,11 @@ h_freq = 25
 tmin = -0.1
 tmax = 0.8  
 
-
+# create lists to store ERPs for each condition across all participants
+ba_erps = []
+fa_erps = []
+va_erps = []
+pa_erps = []
 
 # define subdirectory based on onset type
 subdirectory = "V_onset" if onset_type == 'vowel' else "C_onset"
@@ -71,9 +101,9 @@ output_dir.mkdir(parents=True, exist_ok=True)
 def calculate_shifts(onset_type):
     if onset_type == 'vowel':
         bashift = 0.190-trigger_position
-        pashift = 0.130-trigger_position
-        fashift = 0.200-trigger_position
-        vashift = 0.225-trigger_position
+        pashift = 0.125-trigger_position
+        fashift = 0.185-trigger_position
+        vashift = 0.215-trigger_position
     elif onset_type == 'consonant':
         bashift = 0.155-trigger_position
         pashift = 0.030-trigger_position
@@ -89,7 +119,8 @@ total_epochs_count = {'ba': 0, 'pa': 0, 'fa': 0, 'va': 0}
 #initialize counter to get epoch counts
 total_dropped_epochs = {'ba': 0, 'pa': 0, 'fa': 0, 'va': 0}
 
-for participant_id in participant_ids:
+
+for participant_id, components_to_exclude in tqdm(participant_components.items(), desc="Processing Participants", unit="participant"):
     # load and concatenate raws
     sqd_files = [
         data_dir / f"{participant_id}_trial01.sqd",
@@ -107,8 +138,11 @@ for participant_id in participant_ids:
 
     # set bad channels
     raw.info['bads'] = bad_channels
-
-     # Find events
+    # Set bad channels specific to the participant
+    #if participant_id in bad_channels_dict:
+    #    raw.info['bads'] = bad_channels_dict[participant_id]
+        
+    # Find events
     events = mne.find_events(raw)
     mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
         
@@ -206,11 +240,13 @@ for participant_id in participant_ids:
             ecg_epochs, method='ctps')
 
         raw_filtered.load_data()
-        ica.plot_sources(raw, show_scrollbars=False)
-        ica.plot_components()
-        ica.plot_scores(ecg_scores)
-        ica.plot_sources(ecg_evoked)
-        ica.plot_overlay(ecg_evoked)
+        ica.exclude = components_to_exclude
+        #ica.plot_sources(raw, show_scrollbars=False)
+        #ica.plot_components()
+        #ica.plot_scores(ecg_scores)
+        #ica.plot_sources(ecg_evoked)
+        #ica.plot_overlay(ecg_evoked)
+        print(f"Components excluded: {ica.exclude}") 
         # apply ICA to raw data
         raw_filtered = ica.apply(raw_filtered)
 
@@ -218,10 +254,8 @@ for participant_id in participant_ids:
     ba_events_set = []
     fa_events_set = []
     va_events_set = []
-    pa_04_event_set = []
+    pa_event_set = []
 
-
-    
     # Iterate through events and store them in respective arrays
     for event in ba_shifted:
         event_code = event[2]
@@ -262,27 +296,24 @@ for participant_id in participant_ids:
             i = j
         else:
             i += 1
-
-
-
-    
+   
     # Initialize lists to store events for each PA occurrence for the current participant
-    pa4_events = []
+    pa_events = []
 
     # Iterate through sequences and store events in respective lists
     for sequence in pa_sequences:
         for event_idx, event in enumerate(sequence, start=1):
-            if event_idx == 4:
-                pa4_events.append(event)
+            if event_idx == pa_epoch_to_categorize:
+                pa_events.append(event)
 
 
-    # Print the number of 4th PA events
-    #print(f"Number of 4th PA events: {len(pa4_events)}")
+    # Print the PA event number
+    #print(f"PA event number: {len(pa_events)}")
             
 
     # vonvert lists to NumPy arrays if needed
     ba_events_set = np.array(ba_events_set)
-    pa_04_event_set = np.array(pa4_events)
+    pa_event_set = np.array(pa_events)
     fa_events_set = np.array(fa_events_set)
     va_events_set = np.array(va_events_set)
 
@@ -299,7 +330,7 @@ for participant_id in participant_ids:
                                baseline=baseline, 
                                preload=True)
         epochs_pa = mne.Epochs(raw_filtered, 
-                               pa_04_event_set, 
+                               pa_event_set, 
                                {'pa': 8}, 
                                tmin=tmin,
                                tmax=tmax, 
@@ -344,7 +375,7 @@ for participant_id in participant_ids:
     
     else:
         epochs_ba = mne.Epochs(raw_filtered, ba_events_set, {'ba': 4}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
-        epochs_pa = mne.Epochs(raw_filtered, pa_04_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+        epochs_pa = mne.Epochs(raw_filtered, pa_event_set, {'pa': 8}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
         epochs_fa = mne.Epochs(raw_filtered, fa_events_set, {'fa': 16}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
         epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True) 
 
@@ -417,40 +448,17 @@ for participant_id in participant_ids:
         plt.show()
         plt.close()
 
-        #all channels for all participants
-        fig = mne.viz.plot_compare_evokeds(evokeds,
-                             combine='mean',
-                             ci=False,
-                             legend='upper left',
-                             show_sensors='upper right',
-                             colors=color_dict,
-                             linestyles=linestyle_dict,
-                             title=f'{participant_id} {onset_type} onset'
-                                  ) 
-        plt.show()
-        plt.close()
-
         # produce topographic map to check eye activity
-        #create a 3x6 grid of subplots, longer time scale than above
+        #create a 3x6 grid of subplots
         fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
-        times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450]
-        #plot the second topographic map on the middle subplot
-        ba_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
-        #plot the third topographic map on the bottom subplot
-        pa_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
-        #plot the third topographic map on the bottom subplot
-        fa_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
-        #plot the third topographic map on the bottom subplot
-        va_evoked.plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
-        #add a caption to the figure
-        fig.suptitle(f'{participant_id} {onset_type} onset')
-        #set the titles for each subplot row
-        fig.text(0.5, 0.9, 'BA evoked', ha='center', fontsize=12)
-        fig.text(0.5, 0.68, 'PA evoked', ha='center', fontsize=12)
-        fig.text(0.5, 0.45, 'FA evoked', ha='center', fontsize=12)
-        fig.text(0.5, 0.22, 'VA evoked', ha='center', fontsize=12)
-        #adjust spacing between subplots
-        plt.subplots_adjust(hspace=0.4, wspace=0.2)
+        times = [0.150, 0.200, 0.250, 0.300, 0.350, 0.400]
+        evks['pa'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
+        evks['ba'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
+        evks['fa'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
+        evks['va'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
+        for i, label in enumerate(['PA evoked', 'BA evoked', 'FA evoked', 'VA evoked']):
+            # Place text above the left-most subplot in each row
+            axs[i, 0].text(-0.1, 1.05, label, transform=axs[i, 0].transAxes, fontsize=12, va='center', ha='right')
         plt.show()
         plt.close()
 
