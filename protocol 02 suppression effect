@@ -1,5 +1,6 @@
 #this script categorizes PA events as a function of the number of BA, FA, and VA events which precede them. It epochs them, extracts ERPS, and plots them. 
-#This script is meant to make grand averages of ERPS instead of averaging all epochs, it is a work in progress as of 7/8
+#This script is meant to make grand averages of ERPS instead of averaging all epochs
+#current workign version
 
 #last run 10/10/2024
 import pathlib
@@ -12,11 +13,12 @@ import mne
 
 # define protocol and onset type
 protocol = 'protocol02'
-onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
-date = 'October 10'   
+onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+date = 'October 13'   
 n = 'n=15'
 trigger_position = 0.000      # change this value to shift away from onset by some specified amount, its not the same as time shift later
-ICA = True                    # if False, skips ICA
+ICA = False                    # if False, skips ICA
+display_ica_plots = False      #allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 ICA_variance = 40           # either percent e.g. .95 or number of components e.g., 40
 reject_bad_epochs = True
 baseline = (None, 0)  # means from the first instant to t = 0
@@ -34,42 +36,42 @@ reject_criteria = dict(mag=5000e-15)
 flat_criteria = dict(mag=1e-15) 
 
 # list of participant IDs
-participant_ids = ['R3027', #1 
-                   'R3039', #2 
+participant_ids = [#'R3027', #1 
+                   #'R3039', #2 
                    'R3401', #3 
-                   'R3703', #4 
-                   'R3078', #5 
-                   'R3079', #6 
-                   'R3086', #7 
-                   'R3090', #8 
-                   'R3109', #9 
-                   'R3112', #10 
-                   'R3113', #11 
-                   'R3117', #12 
-                   'R3120', #13 
-                   'R3124', #14 
-                   'R3126'  #15 
+                   #'R3703', #4 
+                   #'R3078', #5 
+                   #'R3079', #6 
+                   #'R3086', #7 
+                   #'R3090', #8 
+                   #'R3109', #9 
+                   #'R3112', #10 
+                   #'R3113', #11 
+                   #'R3117', #12 
+                   #'R3120', #13 
+                   #'R3124', #14 
+                   #'R3126'  #15 
                   ]
 # Mark bad channels
 bad_channels = ['MEG 056', 'MEG 086', 'MEG 117', 'MEG 158', 'MEG 159', 'MEG 160']
 
 # Define participant IDs and their corresponding components to exclude
 participant_components = {
-    'R3027': [0, 1, 2, 3, 5, 9, 17, 11, 12, 13, 34, 36, 37, 38, 39],
-    'R3039': [0, 1, 2, 3, 4, 6, 12, 24, 26, 28, 29, 32, 33, 34, 35, 37, 36, 38, 39, 31, 30],
-    'R3401': [0, 1, 2, 4, 20, 28, 29, 33, 32, 34, 35, 37, 36, 38, 39],
-    'R3703': [0, 1, 2, 3, 14, 15, 20, 24, 25, 29, 31, 32, 33, 34, 35, 26, 27, 28, 30, 36, 37, 38, 39],
-    'R3078': [0, 1, 2, 3, 4, 6, 7, 8, 11, 12, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3079': [0, 1, 2, 3, 4, 6, 11, 12, 15, 16, 19, 22, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3086': [0, 1, 2, 3, 4, 20, 23, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3090': [0, 1, 3, 2, 4, 5, 7, 8, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3109': [0, 1, 2, 3, 9, 14, 10, 8, 16, 20, 24, 26, 33, 34, 35, 36, 37, 38, 39],
-    'R3112': [0, 1, 2, 3, 4, 5, 18, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3113': [0, 1, 2, 3, 4, 5, 8, 12, 13, 14, 16, 17, 22, 23, 26, 25, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3117': [0, 1, 2, 3, 4, 8, 13, 16, 21, 23, 25, 27, 28, 33, 34, 35, 36, 37, 38, 39],
-    'R3120': [0, 1, 15, 16, 22, 25, 29, 30, 31, 32, 35, 36, 37, 38, 39],
-    'R3124': [0, 1, 2, 3, 4, 9, 10, 15, 18, 19, 22, 25, 26, 28, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R3126': [0, 1, 2, 3, 4, 5, 6, 11, 17, 20, 22,  27, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3027': [0, 1, 2, 3, 5, 9, 17, 11, 12, 13, 34, 36, 37, 38, 39],
+    #'R3039': [0, 1, 2, 3, 4, 6, 10, 12, 21, 24, 26, 28, 29, 32, 33, 34, 35, 37, 36, 38, 39, 31, 30], #good signal with 10 and 21
+    'R3401': [0, 1, 2, 4, 13, 20, 28, 29, 33, 32, 34, 35, 37, 36, 38, 39], #21 or 31?
+    #'R3703': [0, 1, 2, 3, 8, 14, 15, 20, 24, 25, 29, 31, 32, 33, 34, 35, 26, 27, 28, 30, 36, 37, 38, 39],
+    #'R3078': [0, 1, 2, 3, 4, 6, 7, 8, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #22? 11, 12, 17, 24, 25, 29
+    #'R3079': [0, 1, 2, 3, 4, 6, 11, 12, 15, 16, 19, 21, 22, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3086': [0, 1, 2, 3, 4, 17, 19, 20, 23, 24, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3090': [0, 1, 3, 2, 4, 5, 6, 7, 8, 11, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3109': [0, 1, 2, 3, 9, 14, 10, 8, 16, 20, 24, 26, 33, 34, 35, 36, 37, 38, 39],
+    #'R3112': [0, 1, 2, 3, 4, 5, 12, 18, 21, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3113': [0, 1, 2, 3, 4, 5, 8, 12, 13, 16, 17, 22, 23, 26, 25, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3117': [0, 1, 2, 3, 4, 8, 13, 16, 21, 23, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3120': [0, 1, 2, 3, 4, 9, 10, 15, 16, 22, 25, 29, 30, 31, 32, 35, 36, 37, 38, 39],
+    #'R3124': [0, 1, 2, 3, 4, 9, 10, 12, 15, 18, 19, 20, 22, 25, 26, 28, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    #'R3126': [0, 1, 2, 3, 4, 5, 6, 11, 17, 19, 20, 22, 27, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
 }
 
 # Define the parameters for the filter
@@ -97,20 +99,18 @@ output_dir.mkdir(parents=True, exist_ok=True)
 # Define trigger shifts based on onset type
 def calculate_shifts(onset_type):
     if onset_type == 'vowel':
-        bashift = 0.205 - trigger_position
-        pashift = 0.115 - trigger_position
-        fashift = 0.194 - trigger_position
-        vashift = 0.220 - trigger_position
+        bashift = 0.190-trigger_position
+        pashift = 0.125-trigger_position
+        fashift = 0.185-trigger_position 
+        vashift = 0.215-trigger_position
     elif onset_type == 'consonant':
-        bashift = 0.160 - trigger_position
-        pashift = 0.050 - trigger_position
-        fashift = 0.075 - trigger_position
-        vashift = 0.155 - trigger_position
-    else:
+        bashift = 0.155-trigger_position
+        pashift = 0.230-trigger_position
+        fashift = 0.060-trigger_position
+        vashift = 0.160-trigger_position
+    else:   
         raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
     return bashift, pashift, fashift, vashift
-
-bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
 
 
  # Initialize dictionary to hold categorized PA events
@@ -165,10 +165,10 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     # Set bad channels
     raw.info['bads'] = bad_channels
 
-    # Find events and map them to conditions
+    # Find events
     events = mne.find_events(raw)
     mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
-    
+        
     # Shift times for each event directly in the raw data
     bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
 
@@ -186,9 +186,10 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
 
     # Set combined annotations on raw data
     raw.set_annotations(ba_annotations)
-    raw.set_annotations(pa_annotations)
     raw.set_annotations(fa_annotations)
+    raw.set_annotations(pa_annotations)
     raw.set_annotations(va_annotations)
+
     
     # Print original events
     print("Original events:")
@@ -215,17 +216,20 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
             event = events_of_type[i]
             print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
     
+
+
     # Create a raw_meg object which excludes all non-meg channels
     raw_meg = raw.pick_types(meg=True, exclude='bads')
 
+    
     # Apply annotations to raw_meg (with shifted times)
     raw_meg.set_annotations(ba_annotations)
     raw_meg.set_annotations(pa_annotations)
     raw_meg.set_annotations(fa_annotations)
     raw_meg.set_annotations(va_annotations)
-    
-    # Filter the raw data
-    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
+
+    # filter the raw data
+    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq) 
 
     # conditionally run ICA
     if ICA:
@@ -255,16 +259,16 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
 
         raw_filtered.load_data()
         ica.exclude = components_to_exclude
-        #ica.plot_sources(raw, show_scrollbars=False)
-        #ica.plot_components()
-        #ica.plot_scores(ecg_scores)
-        #ica.plot_sources(ecg_evoked)
-        #ica.plot_overlay(ecg_evoked)
+        if display_ica_plots:
+            ica.plot_sources(raw, show_scrollbars=False)
+            ica.plot_components()
+            ica.plot_scores(ecg_scores)
+            ica.plot_sources(ecg_evoked)
+            ica.plot_overlay(ecg_evoked)
 
         print(f"Components excluded: {ica.exclude}") 
         # apply ICA to raw data
         raw_filtered = ica.apply(raw_filtered)
-
     
     # Print total number of events to compare to VA events
     print(f"Total number of events for participant {participant_id}: {len(events)}")
@@ -280,8 +284,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     print(f"Total PA events: {total_pa_events}")
     print(f"Total FA events: {total_fa_events}")
     print(f"Total VA events: {total_va_events}")
-
-   
 
    # Initialize dictionaries to hold categorized events based on number of events
     event_sequences_4_events = {
@@ -303,17 +305,17 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     # Set to keep track of seen PA events
     seen_pa_events = set()
 
-    # Iterate over events to extract sequences of 'ba', 'fa', and 'va' events
+    # Iterate over shifted events to extract sequences of 'ba', 'fa', and 'va' events
     i = 0
-    while i < len(events):
-        if events[i, 2] in [4, 16, 32]:  # Check if current event is 'ba', 'fa', or 'va'
-            event_type = events[i, 2]
-            sequence = [events[i].tolist()]
-
+    while i < len(shifted_events):  
+        if shifted_events[i, 2] in [4, 16, 32]:  # Check if current event is 'ba', 'fa', or 'va'
+            event_type = shifted_events[i, 2]
+            sequence = [shifted_events[i].tolist()]  # Access the shifted event
+    
             # Continue adding events to the sequence while they are consecutive 'ba', 'fa', or 'va' events
             j = i + 1
-            while j < len(events) and events[j, 2] == event_type:
-                sequence.append(events[j].tolist())
+            while j < len(shifted_events) and shifted_events[j, 2] == event_type:  
+                sequence.append(shifted_events[j].tolist())  # Access the shifted event
                 j += 1
     
             # Store the sequence in the appropriate dictionary based on the number of events and event type
@@ -326,8 +328,8 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
                 event_sequences_6_events[f'{mapping[event_type]}_6_sequence'].append(sequence)
     
             # Check if the PA event following this sequence has already been seen
-            if j < len(events) and events[j, 2] == 8:  # Check if the next event is 'pa'
-                pa_event = tuple(events[j].tolist())
+            if j < len(shifted_events) and shifted_events[j, 2] == 8:  # Check if the next event is 'pa'
+                pa_event = tuple(shifted_events[j].tolist())  # Access the shifted event
                 if pa_event not in seen_pa_events:
                     seen_pa_events.add(pa_event)
     
@@ -336,7 +338,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
         else:
             i += 1
         seen_pa_events.clear()
-
         
     # Print the number of sequences in each dictionary
     print("Number of sequences in event_sequences_4_events:")
@@ -350,11 +351,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     print("\nNumber of sequences in event_sequences_6_events:")
     for key, value in event_sequences_6_events.items():
         print(f"{key}: {len(value)} sequences")
-
-    # Initialize new dictionaries to store all ba, fa, and va events regardless of 4, 5, or 6 preceding PAs
-    categorized_events['all_ba_events'] = []
-    categorized_events['all_fa_events'] = []
-    categorized_events['all_va_events'] = []
 
     # Iterate through sequences with 4 events
     for event_type, sequences in event_sequences_4_events.items():
@@ -417,8 +413,12 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     all_ba_events = np.array(categorized_events['all_ba_events'])
     all_fa_events = np.array(categorized_events['all_fa_events'])
     all_va_events = np.array(categorized_events['all_va_events'])
-    
 
+    #sort events chronologically to avoid runtime warning
+    all_ba_events = all_ba_events[all_ba_events[:, 0].argsort()]
+    all_fa_events = all_fa_events[all_fa_events[:, 0].argsort()]
+    all_va_events = all_va_events[all_va_events[:, 0].argsort()]
+    
     if reject_bad_epochs:
         # Create epochs from the events for the current participant
         epochs_pa_after_ba_4 = mne.Epochs(raw_filtered, pa_after_ba_4, tmin=tmin, tmax=tmax, reject=reject_criteria, flat=flat_criteria, baseline=baseline, preload=True)
@@ -582,7 +582,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     plt.close()
     
     del raw, raws, raw_filtered, epochs_pa_after_ba_4, epochs_pa_after_ba_5, epochs_pa_after_ba_6, epochs_pa_after_fa_4, epochs_pa_after_fa_5, epochs_pa_after_fa_6, epochs_pa_after_va_4, epochs_pa_after_va_5, epochs_pa_after_va_6, evoked_pa_after_ba_6, evoked_pa_after_fa_6, evoked_pa_after_va_6
-
 
 # Initialize a dictionary to store individual ERPs for each condition
 individual_evks = {condition: [] for condition in categorized_epochs.keys()}
