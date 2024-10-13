@@ -13,14 +13,15 @@ import mne
 
 # define protocol and onset type
 protocol = 'protocol01'
-onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
-trigger_position = 0.000      # change this value to shift away from onset
+onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+trigger_position = 0.00      # change this value to shift away from onset
 ICA = True                    # if False, skips ICA
 ICA_variance = 40            # either percent e.g. .95 or number of components e.g., 40
+display_ica_plots = True      #allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 reject_bad_epochs = True
 baseline = (None, 0)  # means from the first instant to t = 0
 special= ''
-show_individual_plots=False
+show_individual_plots=True
 
 pa_epoch_to_categorize = 4
 
@@ -30,7 +31,7 @@ flat_criteria = dict(mag=1e-18) #from 1e-15
 
 # list of participant IDs
 participant_ids = ['R2830', #
-                   'R2890', #
+                   'R2890', #really excellent data and signal, platonic test case
                    'R2896', #
                    'R2897', #
                    'R2900', #
@@ -242,11 +243,12 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
 
         raw_filtered.load_data()
         ica.exclude = components_to_exclude
-        #ica.plot_sources(raw, show_scrollbars=False)
-        #ica.plot_components()
-        #ica.plot_scores(ecg_scores)
-        #ica.plot_sources(ecg_evoked)
-        #ica.plot_overlay(ecg_evoked)
+        if display_ica_plots:
+            ica.plot_sources(raw, show_scrollbars=False)
+            ica.plot_components()
+            ica.plot_scores(ecg_scores)
+            ica.plot_sources(ecg_evoked)
+            ica.plot_overlay(ecg_evoked)
         print(f"Components excluded: {ica.exclude}") 
         # apply ICA to raw data
         raw_filtered = ica.apply(raw_filtered)
@@ -453,10 +455,10 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
         #create a 3x6 grid of subplots
         fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
         times = [0.150, 0.200, 0.250, 0.300, 0.350, 0.400]
-        evks['pa'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
-        evks['ba'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
-        evks['fa'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
-        evks['va'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
+        evokeds[0].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
+        evokeds[1].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
+        evokeds[2].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
+        evokeds[3].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
         for i, label in enumerate(['PA evoked', 'BA evoked', 'FA evoked', 'VA evoked']):
             # Place text above the left-most subplot in each row
             axs[i, 0].text(-0.1, 1.05, label, transform=axs[i, 0].transAxes, fontsize=12, va='center', ha='right')
