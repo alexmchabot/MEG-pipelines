@@ -20,8 +20,9 @@ ICA_variance = 40            # either percent e.g. .95 or number of components e
 reject_bad_epochs = True
 baseline = (None, 0)  # means from the first instant to t = 0
 special= ''
+show_individual_plots=False
 
-pa_epoch_to_categorize = 5
+pa_epoch_to_categorize = 4
 
 # define the parameters for bad epochs
 reject_criteria = dict(mag=5000e-15) 
@@ -430,7 +431,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     # save evoked data
     mne.write_evokeds(output_dir / f'{participant_id}_evokeds_{file_suffix}{reject_suffix}{special}-ave.fif', list(evokeds), overwrite=True)
 
-    if ICA:
+    if show_individual_plots:
         
         # Define info for the plots
         color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
