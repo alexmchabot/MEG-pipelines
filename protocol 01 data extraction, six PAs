@@ -28,6 +28,7 @@ flat_criteria = dict(mag=1e-18)
 
 # define file names for saving based on ICA variable
 ICA_file = "_ICA" if ICA else ""
+reject_file = "_bad_epochs_rejected" if reject_bad_epochs else ""
 
 # list of participant IDs
 participant_ids = ['R2830', 
