@@ -1,6 +1,7 @@
 #this script categorizes PA events as a function of the number of BA, FA, and VA events which precede them. It epochs them, extracts ERPS, and plots them. 
 #This script is meant to make grand averages of ERPS instead of averaging all epochs
-#current workign version
+#current working version
+#10/13/2024: there is a strange bug that I can't identify in the way time shifting works. Currently, only the va_shift value has any effect, and it only affects the pa_after_va set. However, I feel pretty confident the sorting process works as intended. All shift values are set to zero for the moment, since it doesn't really matter for this experimental set up. 
 
 #last run 10/10/2024
 import pathlib
@@ -17,7 +18,7 @@ onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 
 date = 'October 13'   
 n = 'n=15'
 trigger_position = 0.000      # change this value to shift away from onset by some specified amount, its not the same as time shift later
-ICA = False                    # if False, skips ICA
+ICA = True                    # if False, skips ICA
 display_ica_plots = False      #allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 ICA_variance = 40           # either percent e.g. .95 or number of components e.g., 40
 reject_bad_epochs = True
@@ -36,42 +37,42 @@ reject_criteria = dict(mag=5000e-15)
 flat_criteria = dict(mag=1e-15) 
 
 # list of participant IDs
-participant_ids = [#'R3027', #1 
-                   #'R3039', #2 
+participant_ids = ['R3027', #1 
+                   'R3039', #2 
                    'R3401', #3 
-                   #'R3703', #4 
-                   #'R3078', #5 
-                   #'R3079', #6 
-                   #'R3086', #7 
-                   #'R3090', #8 
-                   #'R3109', #9 
-                   #'R3112', #10 
-                   #'R3113', #11 
-                   #'R3117', #12 
-                   #'R3120', #13 
-                   #'R3124', #14 
-                   #'R3126'  #15 
+                   'R3703', #4 
+                   'R3078', #5 
+                   'R3079', #6 
+                   'R3086', #7 
+                   'R3090', #8 
+                   'R3109', #9 
+                   'R3112', #10 
+                   'R3113', #11 
+                   'R3117', #12 
+                   'R3120', #13 
+                   'R3124', #14 
+                   'R3126'  #15 
                   ]
 # Mark bad channels
 bad_channels = ['MEG 056', 'MEG 086', 'MEG 117', 'MEG 158', 'MEG 159', 'MEG 160']
 
 # Define participant IDs and their corresponding components to exclude
 participant_components = {
-    #'R3027': [0, 1, 2, 3, 5, 9, 17, 11, 12, 13, 34, 36, 37, 38, 39],
-    #'R3039': [0, 1, 2, 3, 4, 6, 10, 12, 21, 24, 26, 28, 29, 32, 33, 34, 35, 37, 36, 38, 39, 31, 30], #good signal with 10 and 21
-    'R3401': [0, 1, 2, 4, 13, 20, 28, 29, 33, 32, 34, 35, 37, 36, 38, 39], #21 or 31?
-    #'R3703': [0, 1, 2, 3, 8, 14, 15, 20, 24, 25, 29, 31, 32, 33, 34, 35, 26, 27, 28, 30, 36, 37, 38, 39],
-    #'R3078': [0, 1, 2, 3, 4, 6, 7, 8, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #22? 11, 12, 17, 24, 25, 29
-    #'R3079': [0, 1, 2, 3, 4, 6, 11, 12, 15, 16, 19, 21, 22, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3086': [0, 1, 2, 3, 4, 17, 19, 20, 23, 24, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3090': [0, 1, 3, 2, 4, 5, 6, 7, 8, 11, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3109': [0, 1, 2, 3, 9, 14, 10, 8, 16, 20, 24, 26, 33, 34, 35, 36, 37, 38, 39],
-    #'R3112': [0, 1, 2, 3, 4, 5, 12, 18, 21, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3113': [0, 1, 2, 3, 4, 5, 8, 12, 13, 16, 17, 22, 23, 26, 25, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3117': [0, 1, 2, 3, 4, 8, 13, 16, 21, 23, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3120': [0, 1, 2, 3, 4, 9, 10, 15, 16, 22, 25, 29, 30, 31, 32, 35, 36, 37, 38, 39],
-    #'R3124': [0, 1, 2, 3, 4, 9, 10, 12, 15, 18, 19, 20, 22, 25, 26, 28, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    #'R3126': [0, 1, 2, 3, 4, 5, 6, 11, 17, 19, 20, 22, 27, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3027': [0, 1, 2, 3, 5, 9, 17, 11, 12, 13, 34, 36, 37, 38, 39],
+    'R3039': [0, 1, 2, 3, 4, 6, 12, 26, 29, 32, 33, 34, 35, 37, 36, 38, 39, 31, 30], 
+    'R3401': [0, 1, 2, 4, 29, 33, 32, 34, 35, 36, 37, 38, 39], 
+    'R3703': [0, 1, 2, 3, 8, 14, 15, 20, 24, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3078': [0, 1, 2, 3, 4, 6, 7, 8, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #22? 11, 12, 17, 24, 25, 29
+    'R3079': [0, 1, 2, 3, 4, 6, 19, 21, 22, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3086': [0, 1, 2, 3, 4, 19, 20, 23, 25, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3090': [0, 1, 3, 2, 4, 5, 6, 7, 8, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3109': [0, 1, 2, 3, 14, 16, 20, 24, 26, 33, 34, 35, 36, 37, 38, 39],
+    'R3112': [0, 1, 2, 3, 4, 5, 18, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3113': [0, 1, 2, 3, 4, 5, 8, 12, 13, 16, 22, 23, 26, 25, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3117': [0, 1, 2, 3, 4, 8, 16, 21, 23, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3120': [0, 1, 2, 3, 4, 9, 15, 16, 22, 25, 29, 30, 31, 32, 35, 36, 37, 38, 39], #deserves ICA attention
+    'R3124': [0, 1, 2, 3, 4, 9, 10, 12, 15, 18, 19, 20, 22, 26, 28, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R3126': [0, 1, 2, 3, 4, 5, 6, 11, 17, 20, 22, 27, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
 }
 
 # Define the parameters for the filter
@@ -104,10 +105,10 @@ def calculate_shifts(onset_type):
         fashift = 0.185-trigger_position 
         vashift = 0.215-trigger_position
     elif onset_type == 'consonant':
-        bashift = 0.155-trigger_position
-        pashift = 0.230-trigger_position
-        fashift = 0.060-trigger_position
-        vashift = 0.160-trigger_position
+        bashift = 0.155-trigger_position-.155
+        pashift = 0.030-trigger_position-.030
+        fashift = 0.060-trigger_position-.060
+        vashift = 0.160-trigger_position-.160
     else:   
         raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
     return bashift, pashift, fashift, vashift
@@ -147,6 +148,7 @@ categorized_epochs = {
 
 # Process each participant
 for participant_id, components_to_exclude in tqdm(participant_components.items(), desc="Processing Participants", unit="participant"):
+    
     # Load and concatenate raws
     sqd_files = [
         data_dir / f"{participant_id}_trial01.sqd",
@@ -186,11 +188,10 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
 
     # Set combined annotations on raw data
     raw.set_annotations(ba_annotations)
-    raw.set_annotations(fa_annotations)
     raw.set_annotations(pa_annotations)
+    raw.set_annotations(fa_annotations)
     raw.set_annotations(va_annotations)
 
-    
     # Print original events
     print("Original events:")
     for event_id, event_type in mapping.items():
@@ -217,16 +218,8 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
             print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
     
 
-
     # Create a raw_meg object which excludes all non-meg channels
     raw_meg = raw.pick_types(meg=True, exclude='bads')
-
-    
-    # Apply annotations to raw_meg (with shifted times)
-    raw_meg.set_annotations(ba_annotations)
-    raw_meg.set_annotations(pa_annotations)
-    raw_meg.set_annotations(fa_annotations)
-    raw_meg.set_annotations(va_annotations)
 
     # filter the raw data
     raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq) 
@@ -274,12 +267,12 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     print(f"Total number of events for participant {participant_id}: {len(events)}")
     
     # Count the total number of each event
-    total_ba_events = np.sum(events[:, 2] == 4)
-    total_pa_events = np.sum(events[:, 2] == 8)
-    total_fa_events = np.sum(events[:, 2] == 16)
-    total_va_events = np.sum(events[:, 2] == 32)
+    total_ba_events = np.sum(shifted_events[:, 2] == 4)
+    total_pa_events = np.sum(shifted_events[:, 2] == 8)
+    total_fa_events = np.sum(shifted_events[:, 2] == 16)
+    total_va_events = np.sum(shifted_events[:, 2] == 32)
 
-    # Print the total number of 'va' events
+    # Print the total number of events
     print(f"Total BA events: {total_ba_events}")
     print(f"Total PA events: {total_pa_events}")
     print(f"Total FA events: {total_fa_events}")
@@ -451,10 +444,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
         epochs_all_fa_events = mne.Epochs(raw_filtered, all_fa_events, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
         epochs_all_va_events = mne.Epochs(raw_filtered, all_va_events, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
     
-
-
-
-
     
     for event_type in categorized_events.keys():
         categorized_events[event_type].clear()
@@ -473,7 +462,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     categorized_epochs['ba_all'].append(epochs_all_ba_events)
     categorized_epochs['fa_all'].append(epochs_all_fa_events)
     categorized_epochs['va_all'].append(epochs_all_va_events)
-
 
     # Print current state of all epochs after each participant
     print(f"Current state of all epochs:")
@@ -581,8 +569,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     plt.savefig(f'{plot_directory}/ERPs_3_deviants_{onset_type}_{participant_id}_{ICA_file}.pdf')
     plt.close()
     
-    del raw, raws, raw_filtered, epochs_pa_after_ba_4, epochs_pa_after_ba_5, epochs_pa_after_ba_6, epochs_pa_after_fa_4, epochs_pa_after_fa_5, epochs_pa_after_fa_6, epochs_pa_after_va_4, epochs_pa_after_va_5, epochs_pa_after_va_6, evoked_pa_after_ba_6, evoked_pa_after_fa_6, evoked_pa_after_va_6
-
+   # del raw, raws, raw_filtered, epochs_pa_after_ba_4, epochs_pa_after_ba_5, epochs_pa_after_ba_6, epochs_pa_after_fa_4, epochs_pa_after_fa_5, epochs_pa_after_fa_6, epochs_pa_after_va_4, epochs_pa_after_va_5, epochs_pa_after_va_6, evoked_pa_after_ba_6, evoked_pa_after_fa_6, evoked_pa_after_va_6
 # Initialize a dictionary to store individual ERPs for each condition
 individual_evks = {condition: [] for condition in categorized_epochs.keys()}
 
