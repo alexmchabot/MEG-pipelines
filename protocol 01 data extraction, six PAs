@@ -1,6 +1,6 @@
-#data extraction script protocol one only pa events. 
+#data extraction script protocol one only pa events, this gives you the suppression effect for sequences 
 #plots the events and saves the plot
-#works as intended as of 10/12/2024
+#works as intended as of 10/14/2024
 
 import os
 import pathlib
@@ -13,12 +13,13 @@ import mne
 
 # define protocol and onset type
 protocol = 'protocol01'
-onset_type = 'vowel'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
-date = 'October 12'   
+onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
+date = 'October 14'   
 n = 'n=14'
 trigger_position = 0.000        # change this value to shift away from onset
 ICA = True                      # if False, skips ICA
 ICA_variance = 40              # either percent e.g. .95 or number of components e.g., 40
+display_ica_plots = True      #allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 reject_bad_epochs = True
 plot_show = False                                              # Change to True to display plots interactively
 # define the parameters for bad epochs
@@ -27,8 +28,6 @@ flat_criteria = dict(mag=1e-18)
 
 # define file names for saving based on ICA variable
 ICA_file = "_ICA" if ICA else ""
-special = '1000 ms'                                            # Unique save tag for deviations from usual parameters, normally empty
-
 
 # list of participant IDs
 participant_ids = ['R2830', 
@@ -38,35 +37,34 @@ participant_ids = ['R2830',
                    'R2900',  
                    'R2906', 
                    'R2915', 
-                   #'R2968', 
+                   'R2968', 
                    'R2976', 
                    'R2996', 
                    'R2997', 
                    'R3005', 
-                   #'R3007', 
+                   'R3007', 
                    'R3008'  
                   ]
 
 # mark bad channels
 bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
 
-
 # Define participant IDs and their corresponding components to exclude
 participant_components = {
-    'R2830': [0, 1, 2, 3, 6, 10, 19, 27, 28, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R2830': [0, 1, 2, 3, 4, 5, 6, 9, 19, 27, 28, 32, 33, 34, 35, 36, 37, 38, 39],
     'R2890': [0, 1, 2, 3, 6, 15, 16, 30, 36, 34, 35, 37, 38, 39, 33, 31, 32],
-    'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15, 16, 20, 22, 25, 24, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #!
-    'R2897': [0, 1, 2, 3, 4, 5, 6, 15, 24, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
-    'R2900': [0, 1, 2, 3, 10, 15, 17, 25, 28, 37, 35, 34, 36, 38, 39], 
-    'R2906': [0, 1, 2, 3, 4, 5, 6, 9, 18, 19, 23, 25, 27, 29, 30, 33, 34, 35, 36, 37, 38, 39],
-    'R2915': [0, 1, 2, 3, 5, 9, 12, 13, 14, 20, 25, 26, 28, 30, 32, 36, 37, 38, 39],
-    #'R2968': [0, 1, 2, 4, 5, 6, 7, 8, 10, 15, 16, 18, 20, 21, 22, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #reject 
-    'R2976': [0, 1, 2, 3, 10, 20, 26, 27, 29, 32, 33, 34, 35, 36, 38, 37, 39],
-    'R2996': [0, 1, 2, 3, 4, 6, 9, 10, 33, 30, 32, 34, 35, 36, 37, 38, 39],
-    'R2997': [0, 1, 2, 3, 4, 5, 7, 11, 14, 15, 17, 18, 19, 21, 23, 27, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #what is this massive spike at @ 200? upper left?
-    'R3005': [0, 1, 2, 3, 4, 5, 6, 8, 7, 27, 29, 33, 34, 35, 36, 37, 38, 39],
-    #'R3007': [0, 1, 2, 3, 4, 8, 9, 14, 18, 32, 33, 34, 35, 36, 38, 39, 37], #reject
-    'R3008': [0, 1, 2, 3, 4, 6, 12, 14, 15, 16, 20, 22, 31, 32, 33, 34, 35, 36, 37, 38, 39], #far upper right blob
+    'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15, 16, 20, 22, 25, 24, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #26, 23
+    'R2897': [0, 1, 2, 3, 4, 5, 6, 24, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    'R2900': [0, 1, 2, 3, 11, 26, 37, 35, 34, 36, 38, 39], 
+    'R2906': [0, 1, 2, 3, 4, 5, 7, 29, 31, 33, 34, 35, 36, 37, 38, 39],
+    'R2915': [0, 1, 2, 3, 5, 9, 12, 13, 14, 25, 26, 28, 30, 32, 36, 37, 38, 39],
+    'R2968': [0, 1, 2, 4, 5, 6, 7, 8, 10, 13, 14, 15, 16, 20, 21, 22, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #reject 
+    'R2976': [0, 1, 2, 3, 10, 26, 29, 32, 33, 34, 35, 36, 38, 37, 39],
+    'R2996': [0, 1, 2, 3, 4, 6, 8, 33, 32, 34, 35, 36, 37, 38, 39],
+    'R2997': [0, 1, 2, 3, 4, 5, 7, 11, 14, 15, 21, 23, 27, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39], #what is this massive spike at @ 200? upper left?
+    'R3005': [0, 1, 2, 3, 4, 5, 6, 8, 7, 27, 30, 33, 34, 35, 36, 37, 38, 39],
+    'R3007': [0, 1, 2, 3, 4, 8, 9, 18, 32, 33, 34, 35, 36, 38, 39, 37], #reject
+    'R3008': [0, 1, 2, 3, 4, 5, 6, 12, 14, 15, 16, 20, 22, 31, 32, 33, 34, 35, 36, 37, 38, 39], #far upper right blob
 }
 
 
@@ -96,19 +94,21 @@ output_dir.mkdir(parents=True, exist_ok=True)
 # define trigger shifts based on onset type
 def calculate_shifts(onset_type):
     if onset_type == 'vowel':
-        pashift = 0.125 - trigger_position
+        bashift = 0.190-trigger_position
+        pashift = 0.125-trigger_position
+        fashift = 0.185-trigger_position
+        vashift = 0.215-trigger_position
     elif onset_type == 'consonant':
-        pashift = 0.030 - trigger_position
+        bashift = 0.160-trigger_position
+        pashift = 0.060-trigger_position
+        fashift = 0.100-trigger_position
+        vashift = 0.160-trigger_position
     else:
         raise ValueError("Unknown onset_type. Supported values are 'vowel' or 'consonant'.")
-    return pashift
+    return bashift, pashift, fashift, vashift
 
-# Calculate shifts once before the loop
-pashift = calculate_shifts(onset_type)
-# Initialize variables
-pa_evokeds = []
-
-conditions = ['pa1', 'pa2', 'pa3', 'pa4', 'pa5', 'pa6']  # Example conditions based on event mapping
+# define event conditions 
+conditions = ['pa1', 'pa2', 'pa3', 'pa4', 'pa5', 'pa6']  
 
 # Initialize lists to store events for each PA occurrence
 all_pa_epochs = {
@@ -120,7 +120,7 @@ all_pa_epochs = {
     'pa6': []
 }
 
-# Iterate over each participant
+# iterate over each participant data-set
 for participant_id, components_to_exclude in tqdm(participant_components.items(), desc="Processing Participants", unit="participant"):
     # Load and concatenate raws
     sqd_files = [
@@ -144,17 +144,37 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     events = mne.find_events(raw)
     mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
     
-    # Shift times for each event directly in the raw data
-    pashift = calculate_shifts(onset_type)
-    pa_shifted = mne.event.shift_time_events(events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq'])
-
-    # annotates the raw data with the shifted times
-    pa_annotations = mne.annotations_from_events(pa_shifted, sfreq=raw.info['sfreq'], orig_time=raw.info['meas_date'], event_desc=mapping)
-
-    # Set combined annotations on raw data
-    raw.set_annotations(pa_annotations)
+    # filter for events, this makes four categories of events. you need this to shift times correctly
+    ba_events = events[events[:, 2] == 4]
+    pa_events = events[events[:, 2] == 8]
+    fa_events = events[events[:, 2] == 16]
+    va_events = events[events[:, 2] == 32]
     
-# Print original PA event times
+    # print total number of events to compare to VA events
+    print(f"Total number of events for participant {participant_id}: {len(events)}")
+    print(f"Number of BA Events for {participant_id}: {ba_events.shape[0]}")
+    print(f"Number of PA Events for {participant_id}: {pa_events.shape[0]}")
+    print(f"Number of FA Events for {participant_id}: {fa_events.shape[0]}")
+    print(f"Number of VA Events for {participant_id}: {va_events.shape[0]}")
+
+    bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
+    print(f"BA Shift: {bashift}, PA Shift: {pashift}, FA Shift: {fashift}, VA Shift: {vashift}")
+
+    # shift the event times
+    ba_shifted = mne.event.shift_time_events(ba_events, ids=[4], tshift=bashift, sfreq=raw.info['sfreq'])
+    pa_shifted = mne.event.shift_time_events(pa_events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq'])
+    fa_shifted = mne.event.shift_time_events(fa_events, ids=[16], tshift=fashift, sfreq=raw.info['sfreq'])
+    va_shifted = mne.event.shift_time_events(va_events, ids=[32], tshift=vashift, sfreq=raw.info['sfreq'])
+
+    #Combine all shifted events into one array
+    combined_shifted_events = np.concatenate((ba_shifted, pa_shifted, fa_shifted, va_shifted))
+    #sort them chronologically (this is important, the events need to be chronological for the categorization to make sense
+    combined_shifted_events = combined_shifted_events[np.argsort(combined_shifted_events[:, 0])]
+    # Print the combined shifted events and their count
+    print(f"Combined Shifted Events: {combined_shifted_events}")
+    print(f"Number of Combined Shifted Events: {combined_shifted_events.shape[0]}")
+    
+    # print original PA event times
     print("Original PA event times:")
     for event_id, event_type in mapping.items():
         if event_id == 8:
@@ -176,9 +196,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
 
     # Create a raw_meg object which excludes all non-meg channels
     raw_meg = raw.pick_types(meg=True, exclude='bads')
-
-    # Apply annotations to raw_meg (with shifted times)
-    raw_meg.set_annotations(pa_annotations)
     
     # Filter the raw data
     raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
@@ -211,11 +228,12 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
 
         raw_filtered.load_data()
         ica.exclude = components_to_exclude
-        #ica.plot_sources(raw, show_scrollbars=False)
-        #ica.plot_components()
-        #ica.plot_scores(ecg_scores)
-        #ica.plot_sources(ecg_evoked)
-        #ica.plot_overlay(ecg_evoked)
+        if display_ica_plots:
+            ica.plot_sources(raw, show_scrollbars=False)
+            ica.plot_components()
+            ica.plot_scores(ecg_scores)
+            ica.plot_sources(ecg_evoked)
+            ica.plot_overlay(ecg_evoked)
         
         print(f"Components excluded: {ica.exclude}") 
         # apply ICA to raw data
@@ -224,28 +242,28 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     
     # Initialize lists to store sequences of 'pa' events
     pa_sequences = []
-
+    
     # Iterate over events to extract sequences of 'pa' events
     i = 0
-    while i < len(pa_shifted):
-        if pa_shifted[i, 2] == 8:  # Check if current event is 'pa'
+    while i < len(combined_shifted_events):
+        if combined_shifted_events[i, 2] == 8:  # Check if current event is 'pa'
             # Start a new sequence
-            pa_sequence = [pa_shifted[i].tolist()]
-
+            pa_sequence = [combined_shifted_events[i].tolist()]
+    
             # Continue adding events to the sequence while they are consecutive 'pa' events
             j = i + 1
-            while j < len(pa_shifted) and pa_shifted[j, 2] == 8:
-                pa_sequence.append(pa_shifted[j].tolist())
+            while j < len(combined_shifted_events) and combined_shifted_events[j, 2] == 8:
+                pa_sequence.append(combined_shifted_events[j].tolist())
                 j += 1
-        
-            # Store the sequence if it has more than one event
-            if len(pa_sequence) > 1:
-                pa_sequences.append(pa_sequence)
+    
+            # Store the sequence (regardless of length for now to debug)
+            pa_sequences.append(pa_sequence)
+            
             # Move index past the current sequence to avoid re-processing
             i = j
         else:
             i += 1
-
+    
     # Initialize lists to store events for each PA occurrence for the current participant
     pa1_participant = []
     pa2_participant = []
@@ -390,8 +408,7 @@ reject_suffix = "_bad_epochs_rejected" if reject_bad_epochs else ""
 num_participants_used = len(epochs_list)
 
 # Adjust the title with the correct number of participants
-title = f'{protocol} participants ({num_participants_used}), {onset_type} onset {ICA_file} {ICA_file} {reject_suffix} {special}'
-
+title = f'{protocol} participants ({num_participants_used}), {onset_type} onset {ICA_file} {ICA_file} {reject_suffix}'
 
 # Define info for the plots
 color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
@@ -404,11 +421,11 @@ fig = mne.viz.plot_compare_evokeds(evks,
                              show_sensors='upper right',
                              colors=color_dict,
                              linestyles=linestyle_dict,
-                             title=title,
-                             show=plot_show,    #if you plot_show = True, then it will display the plot here, but not save it correctly
+                             title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                             show=plot_show,    
                              #ylim=dict(mag=[0, 30])# set y-axis limits
                                   ) 
-plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions{onset_type}{ICA_file}{reject_suffix}{special}.pdf')
+plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions{onset_type}{ICA_file}{reject_suffix}.pdf')
 
 #all channels for all participants
 fig = mne.viz.plot_compare_evokeds(evks,
@@ -418,7 +435,7 @@ fig = mne.viz.plot_compare_evokeds(evks,
                              show_sensors='upper right',
                              colors=color_dict,
                              linestyles=linestyle_dict,
-                             title=title,
+                             title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
                              show=True
                                   ) 
 
@@ -452,7 +469,7 @@ for ax in axes.flatten():
     ax.set_ylim([-max_ylim, max_ylim])
 
 # Add a title to the entire plot
-plt.suptitle(f'{protocol} All channels {onset_type} onset {ICA_file}{special} {reject_suffix}', fontsize=14)
+plt.suptitle(f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}', fontsize=14)
 
 # Display the plot
 plt.show()
@@ -493,9 +510,9 @@ mne.viz.plot_compare_evokeds(evks,
                              show_sensors='upper right',
                              colors=color_dict,
                              linestyles=linestyle_dict,
-                             title=f'All participants ({n}): pa vs. deviants, left hemisphere channels',
+                             title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
                              show=plot_show,
                              ylim=dict(mag=[0, 30])# set y-axis limits
                                       ) 
-plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions{onset_type}_left_hemisphere_channels_{ICA_file}{reject_suffix}{special}.pdf')
+plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_left_hemisphere_channels_{onset_type}{ICA_file}{reject_suffix}.pdf')
 plt.close()
