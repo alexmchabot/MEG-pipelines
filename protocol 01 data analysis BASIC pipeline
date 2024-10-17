@@ -1,5 +1,5 @@
 #this protocol epochs all BA, FA, and VA events. It epochs a single PA event in sequences of PA. It produces thus approximately three times as many PA evoked objects as the other conditions
-#works as intended as of 10/14/2024
+#works as intended as of 10/17/2024
 import pathlib
 import numpy as np
 import matplotlib
@@ -8,13 +8,15 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import mne
 
+
 # define protocol and onset type, ICA, epoch rejection, etc
 protocol = 'protocol01'
 onset_type = 'consonant'     # 'vowel' or 'consonant' depending on where 0 for the trigger is
 trigger_position = 0.00      # change this value to shift away from onset
+plot_raw = False
 ICA = True                   # if False, skips ICA
 ICA_variance = 20            # either percent e.g. .95 or number of components e.g., 40
-display_ica_plots = False    # allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
+display_ica_plots = True    # allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 reject_bad_epochs = True
 interpolate_bads = True
 baseline = (None, 0)          # means from the first instant to t = 0
@@ -26,20 +28,20 @@ reject_criteria = dict(mag=5000e-15)
 flat_criteria = dict(mag=1e-15) 
 
 # list of participant IDs
-participant_ids = [#'R2830', #
-                   #'R2890', #really excellent data and signal, platonic test case
-                   #'R2896', #
-                   #'R2897', #
-                   #'R2900', #
-                   #'R2906', #
-                   #'R2915', #
+participant_ids = ['R2830', #
+                   'R2890', #really excellent data and signal, platonic test case
+                   'R2896', #
+                   'R2897', #
+                   'R2900', #
+                   'R2906', #
+                   'R2915', #
                    'R2968', #
-                   #'R2976', #
-                   #'R2996', #
-                   #'R2997', #
-                   #'R3005', #
-                   #'R3007', #
-                   #'R3008'  #
+                   'R2976', #
+                   'R2996', #
+                   'R2997', #
+                   'R3005', #
+                   'R3007', #
+                   'R3008'  #
                   ]
 
 # mark bad channels
@@ -47,20 +49,20 @@ bad_channels = ['MEG 056', 'MEG 086']
 
 # Define participant IDs and their corresponding components to exclude
 participant_components = {
-    #'R2830': [0, 1, 2, 3, 5, 6, 13, 14, 15, 17], #11?
-    #'R2890': [0, 1, 2, 3, 6, 11, 16, 18, 19],
-    #'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 17], #11, 18, 19
-    #'R2897': [0, 1, 2, 3, 4, 13], #8, 9, 18
-    #'R2900': [0, 1, 2, 3, 13, 14, 18, 19], 
-    #'R2906': [0, 1, 2, 3, 4, 5, 6, 12, 18, 19], #13?
-    #'R2915': [0, 1, 2, 3, 8, 9, 14, 15, 19], #4? 16?
+    'R2830': [0, 1, 2, 3, 5, 6, 13, 14, 15, 17], #11?
+    'R2890': [0, 1, 2, 3, 6, 11, 16, 18, 19],
+    'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 17], #11, 18, 19
+    'R2897': [0, 1, 2, 3, 4, 13], #8, 9, 18
+    'R2900': [0, 1, 2, 3, 13, 14, 18, 19], 
+    'R2906': [0, 1, 2, 3, 4, 5, 6, 12, 18, 19], #13?
+    'R2915': [0, 1, 2, 3, 8, 9, 14, 15, 19], #4? 16?
     'R2968': [0, 1, 2, 3, 4, 14, 15, 17, 18, 19],  #5, 17, 9 10? reject
-    #'R2976': [0, 1, 2, 3, 10, 14, 16], #9
-    #'R2996': [0, 1, 2, 3, 4, 9, 18], #8?
-    #'R2997': [0, 1, 2, 3, 4, 5, 7, 9, 10, 18, 19],  # 11, 13 what is this massive spike upper left?
-    #'R3005': [0, 1, 2, 3, 4, 6, 7, 8, 10, 11, 17], #18, 19?
-    #'R3007': [0, 1, 2, 3, 4, 12, 15],  # reject
-    #'R3008': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17],  #14, 18? 
+    'R2976': [0, 1, 2, 3, 10, 14, 16], #9
+    'R2996': [0, 1, 2, 3, 4, 9, 18], #8?
+    'R2997': [0, 1, 2, 3, 4, 5, 7, 9, 10, 18, 19],  # 11, 13 what is this massive spike upper left?
+    'R3005': [0, 1, 2, 3, 4, 6, 7, 8, 10, 11, 17], #18, 19?
+    'R3007': [0, 1, 2, 3, 4, 12, 15],  # reject
+    'R3008': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17],  #14, 18? 
 }
 
 
@@ -124,10 +126,11 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     # Find events
     events = mne.find_events(raw)
     mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
-    # filter the raw data
+    
     
     # create a raw_meg object which excludes all non-meg channels
     raw_meg = raw.pick_types(meg=True, exclude='bads')
+    # filter the raw data
     raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq) 
     # Ensure the sampling frequency is 250 Hz
     desired_sfreq = 250
@@ -135,8 +138,30 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
         print(f"Downsampling the data from {raw_filtered.info['sfreq']} Hz to {desired_sfreq} Hz.")
         raw_filtered.resample(sfreq=desired_sfreq)
         
-
-    print("Bad channels in raw data:", raw.info['bads'])
+    ##handle bad channels
+    # Identify flat channels by checking for low variance
+    variance_threshold = 1e-53
+    flat_channels = []
+    for ch in raw_filtered.ch_names:
+        # Get data for the current channel
+        channel_data = raw_filtered.get_data(picks=ch)
+        # Calculate the variance of the channel data
+        channel_variance = np.var(channel_data)
+        # Check if the channel's variance is less than or equal to the threshold
+        if channel_variance <= variance_threshold:
+            flat_channels.append(ch)
+    print("Flat channels identified (low variance):", flat_channels)
+    # Combine globally marked bad channels with flat channels
+    all_bad_channels = bad_channels + flat_channels
+    raw_filtered.info['bads'].extend(all_bad_channels)
+    print("Bad channels after marking flat channels:", raw_filtered.info['bads'])
+    if interpolate_bads: 
+        # interpolate bad channels
+        raw_filtered.interpolate_bads(origin=np.array([0.0, 0.0, 0.0]), method=dict(meg="MNE", fnirs="nearest"))
+        print(f"Interpolated bad channels: {flat_channels}")
+    # Plot the raw filtered data if plot_raw is True
+    if plot_raw: 
+        raw_filtered.plot(n_channels=30, block=True, title='Filtered MEG Data')
 
     ##event time shifting
     # filter for events, this makes four categories of events. you need this to shift times correctly
@@ -160,15 +185,13 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     pa_shifted = mne.event.shift_time_events(pa_events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq'])
     fa_shifted = mne.event.shift_time_events(fa_events, ids=[16], tshift=fashift, sfreq=raw.info['sfreq'])
     va_shifted = mne.event.shift_time_events(va_events, ids=[32], tshift=vashift, sfreq=raw.info['sfreq'])
-    
-    # combine all shifted events into one array
+
+    ##sort shifted events
+    # combine all shifted events into one array (this is important, the events need to be chronological for the categorization to make sense
     combined_shifted_events = np.concatenate((ba_shifted, pa_shifted, fa_shifted, va_shifted))
-    #sort them chronologically (this is important, the events need to be chronological for the categorization to make sense
+    #sort them chronologically 
     combined_shifted_events = combined_shifted_events[np.argsort(combined_shifted_events[:, 0])]
-    # Print the combined shifted events and their count
-    print(f"Combined Shifted Events: {combined_shifted_events}")
-    print(f"Number of Combined Shifted Events: {combined_shifted_events.shape[0]}")
-    
+
     # print original events
     print("Original events:")
     for event_id, event_type in mapping.items():
@@ -345,26 +368,11 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
             'fa': len(epochs_fa.drop_log),
             'va': len(epochs_va.drop_log)
         }
-        print(f"{participant_id}: Dropped epochs - ba: {dropped_epochs['ba']}, pa: {dropped_epochs['pa']}, fa: {dropped_epochs['fa']}, va: {dropped_epochs['va']}")   
     else:
         epochs_ba = mne.Epochs(raw_filtered, ba_events_set, {'ba': 4}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
         epochs_pa = mne.Epochs(raw_filtered, pa_events_set, {'pa': 8}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
         epochs_fa = mne.Epochs(raw_filtered, fa_events_set, {'fa': 16}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
-        epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True) 
-    
-    # Check if epochs were dropped and continue analysis accordingly
-    if len(epochs_ba) == 0:
-        print(f"No 'ba' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
-        continue
-    if len(epochs_pa) == 0:
-        print(f"No 'pa' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
-        continue
-    if len(epochs_fa) == 0:
-        print(f"No 'fa' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
-        continue
-    if len(epochs_va) == 0:
-        print(f"No 'va' epochs remaining after rejection criteria for participant {participant_id}. Skipping analysis.")
-        continue
+        epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)   
 
     # Count epochs for this participant
     total_epochs_ba += len(epochs_ba)
