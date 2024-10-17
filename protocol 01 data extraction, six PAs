@@ -13,22 +13,24 @@ import mne
 
 # define protocol and onset type
 protocol = 'protocol01'
-onset_type = 'consonant'          # 'vowel' or 'consonant' depending on where 0 for the trigger is
-date = 'October 14'   
+onset_type = 'consonant'                 # 'vowel' or 'consonant' depending on where 0 for the trigger is
+date = 'October 16'   
 n = 'n=14'
-trigger_position = 0.000        # change this value to shift away from onset
-ICA = True                      # if False, skips ICA
-ICA_variance = 40              # either percent e.g. .95 or number of components e.g., 40
-display_ica_plots = True      #allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
+averaging_pipeline = 'per_participant'  #two methods to get averages 1) 'per_participant' extract epochs -> average epochs per participant and produce evoked -> grand average all evoked 2) = 'across_participant': extract epochs -> average all epochs across participants
+trigger_position = 0.000                 # change this value to shift away from onset
+ICA = True                               # if False, skips ICA
+ICA_variance = 20                        # either percent e.g. .95 or number of components e.g., 40
+display_ica_plots = False                 #allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 reject_bad_epochs = True
-plot_show = False                                              # Change to True to display plots interactively
+plot_show = False                         # Change to True to display plots interactively
 # define the parameters for bad epochs
 reject_criteria = dict(mag=5000e-15) 
 flat_criteria = dict(mag=1e-18) 
 
+
 # define file names for saving based on ICA variable
-ICA_file = "_ICA" if ICA else ""
-reject_file = "_bad_epochs_rejected" if reject_bad_epochs else ""
+ICA_file = "ICA" if ICA else ""
+reject_file = "bad_epochs_rejected" if reject_bad_epochs else ""
 
 # list of participant IDs
 participant_ids = ['R2830', 
@@ -48,7 +50,7 @@ participant_ids = ['R2830',
                   ]
 
 # mark bad channels
-bad_channels = ['MEG 056', 'MEG 086', 'MEG 158', 'MEG 159', 'MEG 160']
+bad_channels = ['MEG 056', 'MEG 086']
 
 # Define participant IDs and their corresponding components to exclude
 participant_components = {
@@ -70,8 +72,8 @@ participant_components = {
 
 
 # define the parameters for the filter
-l_freq = 1
-h_freq = 25
+l_freq = .1
+h_freq = 30
 
 # define the time limits for the epochs
 tmin = -0.1
@@ -111,7 +113,7 @@ def calculate_shifts(onset_type):
 # define event conditions 
 conditions = ['pa1', 'pa2', 'pa3', 'pa4', 'pa5', 'pa6']  
 
-# Initialize lists to store events for each PA occurrence
+# initialize lists to store events for each PA occurrence, this is for the workflow that makes one average for all epochs across participants
 all_pa_epochs = {
     'pa1': [],
     'pa2': [],
@@ -121,8 +123,10 @@ all_pa_epochs = {
     'pa6': []
 }
 
+
 # iterate over each participant data-set
 for participant_id, components_to_exclude in tqdm(participant_components.items(), desc="Processing Participants", unit="participant"):
+
     # Load and concatenate raws
     sqd_files = [
         data_dir / f"{participant_id}_trial01.sqd",
@@ -131,19 +135,21 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     ]
     raws = [mne.io.read_raw_kit(file, preload=True) for file in sqd_files]
     raw = mne.concatenate_raws(raws)
+    # Find events
+    events = mne.find_events(raw)
+    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
+    # filter the raw data
+    # Set bad channels
+    raw.info['bads'] = bad_channels
+    # create a raw_meg object which excludes all non-meg channels
+    raw_meg = raw.pick_types(meg=True, exclude='bads')
+    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq) 
 
     # Ensure the sampling frequency is 250 Hz
     desired_sfreq = 250
-    if raw.info['sfreq'] != desired_sfreq:
-        print(f"Downsampling the data from {raw.info['sfreq']} Hz to {desired_sfreq} Hz.")
-        raw = raw.resample(sfreq=desired_sfreq)  # Resample the raw object
-
-    # Set bad channels
-    raw.info['bads'] = bad_channels
-        
-     # find events
-    events = mne.find_events(raw)
-    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
+    if raw_filtered.info['sfreq'] != desired_sfreq:
+        print(f"Downsampling the data from {raw_filtered.info['sfreq']} Hz to {desired_sfreq} Hz.")
+        raw_filtered.resample(sfreq=desired_sfreq)
     
     # filter for events, this makes four categories of events. you need this to shift times correctly
     ba_events = events[events[:, 2] == 4]
@@ -159,7 +165,6 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     print(f"Number of VA Events for {participant_id}: {va_events.shape[0]}")
 
     bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
-    print(f"BA Shift: {bashift}, PA Shift: {pashift}, FA Shift: {fashift}, VA Shift: {vashift}")
 
     # shift the event times
     ba_shifted = mne.event.shift_time_events(ba_events, ids=[4], tshift=bashift, sfreq=raw.info['sfreq'])
@@ -174,33 +179,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     # Print the combined shifted events and their count
     print(f"Combined Shifted Events: {combined_shifted_events}")
     print(f"Number of Combined Shifted Events: {combined_shifted_events.shape[0]}")
-    
-    # print original PA event times
-    print("Original PA event times:")
-    for event_id, event_type in mapping.items():
-        if event_id == 8:
-            events_of_type = events[events[:, 2] == event_id]
-            for i in range(min(5, len(events_of_type))):
-                event = events_of_type[i]
-                print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
-
-    # Print shifted PA event times
-    print("\nShifted PA event times:")
-    shifted_events = pa_shifted  # Assuming pa_shifted contains shifted events
-    for event_id, event_type in mapping.items():
-        if event_id == 8:
-            events_of_type = shifted_events[shifted_events[:, 2] == event_id]
-            for i in range(min(5, len(events_of_type))):
-                event = events_of_type[i]
-                print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
-
-
-    # Create a raw_meg object which excludes all non-meg channels
-    raw_meg = raw.pick_types(meg=True, exclude='bads')
-    
-    # Filter the raw data
-    raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq)
-    
+     
     # conditionally run ICA
     if ICA:
         # ICA Configuration
@@ -290,7 +269,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
                 pa6_participant.append(event)
                 
 
-# Convert lists to NumPy arrays after collecting events for the current participant
+    # Convert lists to NumPy arrays after collecting events for the current participant
     pa1_participant = np.array(pa1_participant)
     pa2_participant = np.array(pa2_participant)
     pa3_participant = np.array(pa3_participant)
@@ -360,7 +339,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     print(f"Number of epochs for pa5: {len(epochs_pa5)}")
     print(f"Number of epochs for pa6: {len(epochs_pa6)}")
 
-        # Append epochs to the accumulated dataset
+    # Append epochs to the accumulated dataset
     all_pa_epochs['pa1'].append(epochs_pa1)
     all_pa_epochs['pa2'].append(epochs_pa2)
     all_pa_epochs['pa3'].append(epochs_pa3)
@@ -382,138 +361,179 @@ for condition, epochs_list in all_pa_epochs.items():
     print(f"Condition: {condition}, Number of participants: {len(epochs_list)}, Total epochs: {sum([len(e) for e in epochs_list])}")
 
 # Now all_pa_epochs contains all epochs for pa1 to pa6 across all participants
-# Initialize a dictionary to store ERPs for each condition
-evks = {}
 
-# Iterate through each condition in all_pa_epochs
-for condition, epochs_list in all_pa_epochs.items():
-    # Combine all epochs across participants for the current condition
-    combined_epochs = mne.concatenate_epochs(epochs_list)
-    
-    # Calculate the ERP (average across epochs)
-    evk = combined_epochs.average()
-    
-    # Store the ERP in the dictionary
-    evks[condition] = evk
+
 
 plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}')
 if not plot_directory.exists():
     plot_directory.mkdir(parents=True)
 
 # define file names for saving based on ICA variable
-ICA_file = "_ICA" if ICA else ""
-reject_suffix = "_bad_epochs_rejected" if reject_bad_epochs else ""
+ICA_suffix = "ICA" if ICA else ""
+reject_suffix = "bad_epochs_rejected" if reject_bad_epochs else ""
+evoked_method = "across_participant" if averaging_pipeline == 'across_participant' else "per_participant"
 
+if averaging_pipeline == 'per_participant':
+    
+    # Initialize a dictionary to store ERPs 
+    evks = {}
+    # Iterate through each condition in all_pa_epochs
+    for condition, epochs_list in all_pa_epochs.items():
+        # Combine all epochs across participants for the current condition
+        combined_epochs = mne.concatenate_epochs(epochs_list)
+        # Calculate the ERP (average across epochs)
+        evk = combined_epochs.average()
+        # Store the ERP in the dictionary
+        evks[condition] = evk
 
-# Calculate the number of participants based on the evoked objects
-num_participants_used = len(epochs_list)
-
-# Adjust the title with the correct number of participants
-title = f'{protocol} participants ({num_participants_used}), {onset_type} onset {ICA_file} {ICA_file} {reject_suffix}'
-
-# Define info for the plots
-color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
-linestyle_dict = {'pa1': '-', 'pa2': '-', 'pa3': '-', 'pa4': '-', 'pa5': '-', 'pa6': '-'}
-
-#all channels for all participants
-fig = mne.viz.plot_compare_evokeds(evks,
-                             ci=False,
-                             legend='upper left',
-                             show_sensors='upper right',
-                             colors=color_dict,
-                             linestyles=linestyle_dict,
-                             title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
-                             show=plot_show,    
-                             #ylim=dict(mag=[0, 30])# set y-axis limits
-                                  ) 
-plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions{onset_type}{ICA_file}{reject_suffix}.pdf')
-
-#all channels for all participants
-fig = mne.viz.plot_compare_evokeds(evks,
-                             combine='mean',   
-                             ci=False,
-                             legend='upper left',
-                             show_sensors='upper right',
-                             colors=color_dict,
-                             linestyles=linestyle_dict,
-                             title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
-                             show=True
-                                  ) 
-
-# Create subplots for the butterfly plots
-fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10))  # Adjusted to fit 3x2 grid
-
-# Access each evoked object from the dictionary using its key
-evks['pa1'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
-axes[0, 0].set_title('PA1, all channels')
-
-evks['pa2'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
-axes[0, 1].set_title('PA2, all channels')
-
-evks['pa3'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
-axes[1, 0].set_title('PA3, all channels')
-
-evks['pa4'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 1], show=False)
-axes[1, 1].set_title('PA4, all channels')
-
-evks['pa5'].plot(exclude='bads', spatial_colors=True, axes=axes[2, 0], show=False)
-axes[2, 0].set_title('PA5, all channels')
-
-evks['pa6'].plot(exclude='bads', spatial_colors=True, axes=axes[2, 1], show=False)
-axes[2, 1].set_title('PA6, all channels')
-
-# Calculate the maximum ylim value among the six plots
-max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten()])
-
-# Set the same ylim value for all subplots
-for ax in axes.flatten():
-    ax.set_ylim([-max_ylim, max_ylim])
-
-# Add a title to the entire plot
-plt.suptitle(f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}', fontsize=14)
-
-# Display the plot
-plt.show()
-
-
-#create a 3x6 grid of subplots
-fig, axs = plt.subplots(6, 6, figsize=(20, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1, 1, 1], 'hspace': 0})
-
-times = [0.150, 0.200, 0.250, 0.300, 0.350, 0.400]
-
-#plot the second topographic map on the middle subplot
-evks['pa1'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
-
-#plot the third topographic map on the bottom subplot
-evks['pa2'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
-
-#plot the third topographic map on the bottom subplot
-evks['pa3'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
-
-#plot the third topographic map on the bottom subplot
-evks['pa4'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
-
-#plot the third topographic map on the bottom subplot
-evks['pa5'].plot_topomap(times=times, ch_type='mag', axes=axs[4, :], show=False, colorbar=False)
-
-#plot the third topographic map on the bottom subplot
-evks['pa6'].plot_topomap(times=times, ch_type='mag', axes=axs[5, :], show=False, colorbar=False)
-plt.show()
-
-# Get the channel names for left hemisphere (based on negative x-coordinate)
-left_hemisphere_chs = [ch_name for ch_name, pos in zip(evk.info['ch_names'], evk.info['chs']) if pos['loc'][0] < 0]
-#left hemispehere chans
-mne.viz.plot_compare_evokeds(evks,
-                             combine='gfp',
-                             picks = left_hemisphere_chs,
-                             ci=False,
-                             legend='upper left',
-                             show_sensors='upper right',
-                             colors=color_dict,
-                             linestyles=linestyle_dict,
-                             title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
-                             show=plot_show,
-                             ylim=dict(mag=[0, 30])# set y-axis limits
+    # Calculate the number of participants based on the evoked objects
+    num_participants_used = len(epochs_list)
+    # Adjust the title with the correct number of participants
+    title = f'{protocol} participants ({num_participants_used}), {onset_type} onset {ICA_file} {ICA_file} {reject_suffix}'
+    
+    
+    # Define info for the plots
+    color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
+    linestyle_dict = {'pa1': '-', 'pa2': '-', 'pa3': '-', 'pa4': '-', 'pa5': '-', 'pa6': '-'}
+    
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(evks,
+                                 ci=False,
+                                 legend='upper left',
+                                 show_sensors='upper right',
+                                 colors=color_dict,
+                                 linestyles=linestyle_dict,
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=plot_show,    
+                                 #ylim=dict(mag=[0, 30])# set y-axis limits
                                       ) 
-plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_left_hemisphere_channels_{onset_type}{ICA_file}{reject_suffix}.pdf')
-plt.close()
+    plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
+    
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(evks,
+                                 combine='mean',   
+                                 ci=False,
+                                 legend='upper left',
+                                 show_sensors='upper right',
+                                 colors=color_dict,
+                                 linestyles=linestyle_dict,
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=True
+                                      ) 
+    
+    # Create subplots for the butterfly plots
+    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10))  # Adjusted to fit 3x2 grid
+    evks['pa1'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
+    axes[0, 0].set_title('PA1, all channels')
+    evks['pa2'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
+    axes[0, 1].set_title('PA2, all channels')
+    evks['pa3'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
+    axes[1, 0].set_title('PA3, all channels')
+    evks['pa4'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 1], show=False)
+    axes[1, 1].set_title('PA4, all channels')
+    evks['pa5'].plot(exclude='bads', spatial_colors=True, axes=axes[2, 0], show=False)
+    axes[2, 0].set_title('PA5, all channels')
+    evks['pa6'].plot(exclude='bads', spatial_colors=True, axes=axes[2, 1], show=False)
+    axes[2, 1].set_title('PA6, all channels')
+    # Calculate the maximum ylim value among the six plots
+    max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten()])
+    # Set the same ylim value for all subplots
+    for ax in axes.flatten():
+        ax.set_ylim([-max_ylim, max_ylim])
+    plt.suptitle(f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}', fontsize=14)
+    plt.show()
+    
+    #plot topographic plot
+    # Create a 6x7 grid of subplots 
+    fig, axs = plt.subplots(6, 7, figsize=(20, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1, 1, 1], 'hspace': 0})
+    times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450, 0.500]  # Matches the 7 columns in the grid
+    evks['pa1'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)  # First row
+    evks['pa2'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)  # Second row
+    evks['pa3'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)  # Third row
+    evks['pa4'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)  # Fourth row
+    evks['pa5'].plot_topomap(times=times, ch_type='mag', axes=axs[4, :], show=False, colorbar=False)  # Fifth row
+    evks['pa6'].plot_topomap(times=times, ch_type='mag', axes=axs[5, :], show=False, colorbar=False)  # Sixth row
+
+    plt.show()
+    
+    # Get the channel names for left hemisphere (based on negative x-coordinate)
+    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evk.info['ch_names'], evk.info['chs']) if pos['loc'][0] < 0]
+    #left hemispehere chans
+    mne.viz.plot_compare_evokeds(evks,
+                                 combine='gfp',
+                                 picks = left_hemisphere_chs,
+                                 ci=False,
+                                 legend='upper left',
+                                 show_sensors='upper right',
+                                 colors=color_dict,
+                                 linestyles=linestyle_dict,
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=plot_show,
+                                 ylim=dict(mag=[0, 30])# set y-axis limits
+                                          ) 
+    plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_left_hemisphere_channels_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
+    plt.close()
+    
+if averaging_pipeline == 'across_participant':
+    # Initialize a dictionary to store individual ERPs for each condition
+    individual_evks = {condition: [] for condition in all_pa_epochs.keys()}
+    
+    # Initialize a dictionary to count the number of epochs for each condition
+    individual_epochs_counts = {condition: 0 for condition in all_pa_epochs.keys()}
+    
+    # Iterate through each condition in categorized_epochs
+    for condition, epochs_list in all_pa_epochs.items():
+        # Calculate the ERP for each participant individually
+        for epochs in epochs_list:
+            if len(epochs) > 0:
+                evk_across_parts = epochs.average()
+                individual_evks[condition].append(evk_across_parts)
+                # Increment the count for this condition
+                individual_epochs_counts[condition] += len(epochs)
+            else:
+                print(f"Skipping empty Epochs object for condition {condition}")
+    
+    
+    # print the number of ERPs per condition
+    print("Number of ERPs per condition:")
+    for condition, evks in individual_evks.items():
+        print(f"{condition}: {len(evks)}")  # Print the count of ERPs for each condition
+    
+    # print the counts of epochs
+    print("\nCount of epochs for each condition:")
+    for condition, count in individual_epochs_counts.items():
+        print(f"{condition}: {count}")
+    
+    # Calculate the number of participants based on the evoked objects
+    num_participants_used = len(epochs_list)
+    title = f'{protocol} participants ({num_participants_used}),{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}'
+
+    
+    # Define info for the plots
+    color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
+    linestyle_dict = {'pa1': '-', 'pa2': '-', 'pa3': '-', 'pa4': '-', 'pa5': '-', 'pa6': '-'}
+    
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(individual_evks,
+                                 ci=False,
+                                 legend='upper left',
+                                 show_sensors='upper right',
+                                 colors=color_dict,
+                                 linestyles=linestyle_dict,
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=True,    
+                                 #ylim=dict(mag=[0, 30])# set y-axis limits
+                                      ) 
+    plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
+    
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(individual_evks,
+                                 combine='mean',   
+                                 ci=False,
+                                 legend='upper left',
+                                 show_sensors='upper right',
+                                 colors=color_dict,
+                                 linestyles=linestyle_dict,
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=True
+                                      ) 
