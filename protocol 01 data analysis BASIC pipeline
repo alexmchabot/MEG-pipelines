@@ -11,20 +11,22 @@ import mne
 
 # define protocol and onset type, ICA, epoch rejection, etc
 protocol = 'protocol01'
-onset_type = 'consonant'     # 'vowel' or 'consonant' depending on where 0 for the trigger is
-trigger_position = 0.00      # change this value to shift away from onset
+onset_type = 'consonant'         # 'vowel' or 'consonant' depending on where 0 for the trigger is
+debugging = False
+trigger_position = 0.00         # change this value to shift away from onset
 plot_raw = False
-ICA = True                   # if False, skips ICA
-ICA_variance = 20            # either percent e.g. .95 or number of components e.g., 40
-display_ica_plots = True    # allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
+ICA = True                       # if False, skips ICA
+ICA_variance = 20                # either percent e.g. .95 or number of components e.g., 40
+display_ica_plots = True        # allows for ICA componants to be viewed, if set to false ICA will just run according to predetermiend component selection
 reject_bad_epochs = True
+dropped_epoch_logging = True   #shows loggs for dropped epochs
 interpolate_bads = True
-baseline = (None, 0)          # means from the first instant to t = 0
+baseline = (None, 0)            # means from the first instant to t = 0
 show_individual_plots=False
 pa_epoch_to_categorize = 4
 
 # define the parameters for bad epochs
-reject_criteria = dict(mag=5000e-15) 
+reject_criteria = dict(mag=3000e-15) 
 flat_criteria = dict(mag=1e-15) 
 
 # list of participant IDs
@@ -44,25 +46,25 @@ participant_ids = ['R2830', #
                    'R3008'  #
                   ]
 
-# mark bad channels
-bad_channels = ['MEG 056', 'MEG 086']
+# bad channels dictionary 
+bad_channels = ['MEG 056']
 
 # Define participant IDs and their corresponding components to exclude
 participant_components = {
-    'R2830': [0, 1, 2, 3, 5, 6, 13, 14, 15, 17], #11?
+    'R2830': [0, 1, 2, 3, 4, 5, 9, 16, 19], #11?
     'R2890': [0, 1, 2, 3, 6, 11, 16, 18, 19],
-    'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 17], #11, 18, 19
-    'R2897': [0, 1, 2, 3, 4, 13], #8, 9, 18
+    'R2896': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 17, 19], #11, 18 noisy data 
+    'R2897': [0, 1, 2, 3, 4, 5, 13], #8, 9, 18
     'R2900': [0, 1, 2, 3, 13, 14, 18, 19], 
-    'R2906': [0, 1, 2, 3, 4, 5, 6, 12, 18, 19], #13?
-    'R2915': [0, 1, 2, 3, 8, 9, 14, 15, 19], #4? 16?
-    'R2968': [0, 1, 2, 3, 4, 14, 15, 17, 18, 19],  #5, 17, 9 10? reject
-    'R2976': [0, 1, 2, 3, 10, 14, 16], #9
-    'R2996': [0, 1, 2, 3, 4, 9, 18], #8?
-    'R2997': [0, 1, 2, 3, 4, 5, 7, 9, 10, 18, 19],  # 11, 13 what is this massive spike upper left?
-    'R3005': [0, 1, 2, 3, 4, 6, 7, 8, 10, 11, 17], #18, 19?
-    'R3007': [0, 1, 2, 3, 4, 12, 15],  # reject
-    'R3008': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17],  #14, 18? 
+    'R2906': [0, 1, 2, 3, 4, 5, 6, 12, 13, 18, 19], #13?
+    'R2915': [0, 1, 2, 3, 4, 7, 8, 14, 17, 19], #4? 16?
+    'R2968': [0, 1, 2, 3, 4, 14, 15, 17, 18, 19],  #5, 17, 9 10?    
+    'R2976': [0, 1, 2, 3, 9, 10, 14, 16],  
+    'R2996': [0, 1, 2, 3, 4, 9, 18], #8? 
+    'R2997': [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 18, 19],  # 11, 13 
+    'R3005': [0, 1, 2, 3, 4, 6, 7, 8, 10, 11, 16, 17], #18, 19?
+    'R3007': [0, 1, 2, 3, 4, 12, 14, 15, 17, 18],  # reject?
+    'R3008': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17],  #14, 18? 
 }
 
 
@@ -123,68 +125,43 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     for raw in raws:
         raw.info['bads'].extend(bad_channels)
     raw = mne.concatenate_raws(raws)
-    # Find events
+
+    # find events
     events = mne.find_events(raw)
-    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'}
+    mapping = {4: 'ba', 8: 'pa', 16: 'fa', 32: 'va'} 
     
-    
+    if debugging: 
+        print("Original event onsets in raw data (seconds):")
+        for event in events[:55]:  # Only take the first 25 events
+            print(f"Event ID: {event[2]}, Onset: {event[0] / raw.info['sfreq']:.3f} s")
+
     # create a raw_meg object which excludes all non-meg channels
-    raw_meg = raw.pick_types(meg=True, exclude='bads')
+    raw_meg = raw.copy().pick('meg', exclude='bads')#) 
     # filter the raw data
     raw_filtered = raw_meg.copy().filter(l_freq=l_freq, h_freq=h_freq) 
-    # Ensure the sampling frequency is 250 Hz
-    desired_sfreq = 250
+
+    # Ensure the sampling frequency 
+    desired_sfreq = 1000
     if raw_filtered.info['sfreq'] != desired_sfreq:
         print(f"Downsampling the data from {raw_filtered.info['sfreq']} Hz to {desired_sfreq} Hz.")
-        raw_filtered.resample(sfreq=desired_sfreq)
-        
-    ##handle bad channels
-    # Identify flat channels by checking for low variance
-    variance_threshold = 1e-53
-    flat_channels = []
-    for ch in raw_filtered.ch_names:
-        # Get data for the current channel
-        channel_data = raw_filtered.get_data(picks=ch)
-        # Calculate the variance of the channel data
-        channel_variance = np.var(channel_data)
-        # Check if the channel's variance is less than or equal to the threshold
-        if channel_variance <= variance_threshold:
-            flat_channels.append(ch)
-    print("Flat channels identified (low variance):", flat_channels)
-    # Combine globally marked bad channels with flat channels
-    all_bad_channels = bad_channels + flat_channels
-    raw_filtered.info['bads'].extend(all_bad_channels)
-    print("Bad channels after marking flat channels:", raw_filtered.info['bads'])
-    if interpolate_bads: 
-        # interpolate bad channels
-        raw_filtered.interpolate_bads(origin=np.array([0.0, 0.0, 0.0]), method=dict(meg="MNE", fnirs="nearest"))
-        print(f"Interpolated bad channels: {flat_channels}")
-    # Plot the raw filtered data if plot_raw is True
-    if plot_raw: 
-        raw_filtered.plot(n_channels=30, block=True, title='Filtered MEG Data')
+        raw_filtered = raw_filtered.resample(sfreq=desired_sfreq)
 
-    ##event time shifting
+    ##event mangement
+    # time shift events
     # filter for events, this makes four categories of events. you need this to shift times correctly
     ba_events = events[events[:, 2] == 4]
     pa_events = events[events[:, 2] == 8]
     fa_events = events[events[:, 2] == 16]
     va_events = events[events[:, 2] == 32]
-
-    # print total number of events
-    print(f"Total number of events for participant {participant_id}: {len(events)}")
-    print(f"Number of BA Events for {participant_id}: {ba_events.shape[0]}")
-    print(f"Number of PA Events for {participant_id}: {pa_events.shape[0]}")
-    print(f"Number of FA Events for {participant_id}: {fa_events.shape[0]}")
-    print(f"Number of VA Events for {participant_id}: {va_events.shape[0]}")
     
     #set time shift parameters
     bashift, pashift, fashift, vashift = calculate_shifts(onset_type)
 
     # shift the event times
-    ba_shifted = mne.event.shift_time_events(ba_events, ids=[4], tshift=bashift, sfreq=raw.info['sfreq'])
-    pa_shifted = mne.event.shift_time_events(pa_events, ids=[8], tshift=pashift, sfreq=raw.info['sfreq'])
-    fa_shifted = mne.event.shift_time_events(fa_events, ids=[16], tshift=fashift, sfreq=raw.info['sfreq'])
-    va_shifted = mne.event.shift_time_events(va_events, ids=[32], tshift=vashift, sfreq=raw.info['sfreq'])
+    ba_shifted = mne.event.shift_time_events(ba_events, ids=[4], tshift=bashift, sfreq=raw_filtered.info['sfreq'])
+    pa_shifted = mne.event.shift_time_events(pa_events, ids=[8], tshift=pashift, sfreq=raw_filtered.info['sfreq'])
+    fa_shifted = mne.event.shift_time_events(fa_events, ids=[16], tshift=fashift, sfreq=raw_filtered.info['sfreq'])
+    va_shifted = mne.event.shift_time_events(va_events, ids=[32], tshift=vashift, sfreq=raw_filtered.info['sfreq'])
 
     ##sort shifted events
     # combine all shifted events into one array (this is important, the events need to be chronological for the categorization to make sense
@@ -192,72 +169,16 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     #sort them chronologically 
     combined_shifted_events = combined_shifted_events[np.argsort(combined_shifted_events[:, 0])]
 
-    # print original events
-    print("Original events:")
-    for event_id, event_type in mapping.items():
-        events_of_type = events[events[:, 2] == event_id]
-        for i in range(min(5, len(events_of_type))):
-            event = events_of_type[i]
-            print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
+    if debugging: 
+        print("Shifted event onsets in data (seconds):")
+        for event in combined_shifted_events[:25]:  # Only take the first 25 shifted events
+            print(f"Event ID: {event[2]}, Onset: {event[0] / raw_filtered.info['sfreq']:.3f} s")
 
-    # print shifted events
-    print("\nShifted events:")
-    for event_id, event_type in mapping.items():
-        if event_id == 4:
-            shifted_events = ba_shifted
-        elif event_id == 8:
-            shifted_events = pa_shifted
-        elif event_id == 16:
-            shifted_events = fa_shifted
-        elif event_id == 32:
-            shifted_events = va_shifted
-        events_of_type = shifted_events[shifted_events[:, 2] == event_id]
-        for i in range(min(5, len(events_of_type))):
-            event = events_of_type[i]
-            print(f"{event_type} event {i+1}: Time {event[0] / raw.info['sfreq']} s")
-
-    # print number of events and their mapping
-    print("Number of events per condition:")
-    for code, condition in mapping.items():
-        num_events = len(events[events[:, 2] == code])
-        print(f"{condition}: {num_events} events")
-
-    ##  run ICA
-    if ICA:
-        # ICA Configuration
-        n_components = ICA_variance
-        method = 'picard'
-        max_iter = 1000
-        fit_params = dict(fastica_it=5)
-        random_state = 13
-
-        ica = mne.preprocessing.ICA(n_components=ICA_variance, 
-                                    method=method,
-                                    max_iter=max_iter,
-                                    fit_params=fit_params,
-                                    random_state=random_state)
-         # fit ICA on filtered data
-        ica.fit(raw_filtered)
-         # then tries to find the ecg artifacts in ica
-        ecg_epochs = mne.preprocessing.create_ecg_epochs(raw_filtered,
-                                                         reject=None,
-                                                         baseline=(None, -.02),
-                                                         tmin=-0.5,
-                                                         tmax=0.5)
-        ecg_evoked = ecg_epochs.average()
-        ecg_inds, ecg_scores = ica.find_bads_ecg(
-            ecg_epochs, method='ctps')
-        raw_filtered.load_data()
-        ica.exclude = components_to_exclude
-        if display_ica_plots:
-            ica.plot_sources(raw, show_scrollbars=False)
-            ica.plot_components()
-            ica.plot_scores(ecg_scores)
-            ica.plot_sources(ecg_evoked)
-            ica.plot_overlay(ecg_evoked)
-        print(f"Components excluded: {ica.exclude}") 
-        # apply ICA to raw data
-        raw_filtered = ica.apply(raw_filtered)
+        # print number of events and their mapping
+        print("Number of events per condition:")
+        for code, condition in mapping.items():
+            num_events = len(events[events[:, 2] == code])
+            print(f"{condition}: {num_events} events")
 
     #event sorting
     # initialize empty arrays/lists for each event type
@@ -266,17 +187,13 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     va_events_set = []
 
     # Iterate through events and store them in respective arrays
-    for event in ba_shifted:
-        event_code = event[2]
-        if event_code == 4:
+    for event in combined_shifted_events:
+        event_code = event[2]  
+        if event_code == 4:  
             ba_events_set.append(event)
-    for event in fa_shifted:
-        event_code = event[2]
-        if event_code == 16:
+        elif event_code == 16:  
             fa_events_set.append(event)
-    for event in va_shifted:
-        event_code = event[2]
-        if event_code == 32:
+        elif event_code == 32:  
             va_events_set.append(event)
 
     # lists to store sequences of 'pa' events
@@ -316,16 +233,81 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     pa_events_set = np.array(pa_events_set)
     fa_events_set = np.array(fa_events_set)
     va_events_set = np.array(va_events_set)
-
+    
     # print the number of events in each set
     print(f"Number of BA Events: {ba_events_set.shape[0]}")
     print(f"Number of PA Events: {pa_events_set.shape[0]}")
     print(f"Number of FA Events: {fa_events_set.shape[0]}")
     print(f"Number of VA Events: {va_events_set.shape[0]}")
+    
+    ##bad channel handling 
+    # Identify flat channels by checking for low variance
+    variance_threshold = 1e-53
+    flat_channels = []
+    for ch in raw_filtered.ch_names:
+        # Get data for the current channel
+        channel_data = raw_filtered.get_data(picks=ch)
+        # Calculate the variance of the channel data
+        channel_variance = np.var(channel_data)
+        # Check if the channel's variance is less than or equal to the threshold
+        if channel_variance <= variance_threshold:
+            flat_channels.append(ch)
+    print("Flat channels identified (low variance):", flat_channels)
 
+    #make flat channels bad
+    raw_filtered.info['bads'].extend(flat_channels)
+
+    if interpolate_bads: 
+        # interpolate bad channels
+        raw_filtered.interpolate_bads(origin=np.array([0.0, 0.0, 0.0]), method=dict(meg="MNE", fnirs="nearest"))
+        print(f"Interpolated bad channels: {flat_channels}")
+    # Plot the raw filtered data if plot_raw is True
+    if plot_raw: 
+        raw_filtered.plot(n_channels=30, block=True, title='Filtered MEG Data')
+    
+    ##  run ICA
+    if ICA:
+        # ICA Configuration
+        n_components = ICA_variance
+        method = 'picard'
+        max_iter = 1000
+        fit_params = dict(fastica_it=5)
+        random_state = 13
+
+        ica = mne.preprocessing.ICA(n_components=ICA_variance, 
+                                    method=method,
+                                    max_iter=max_iter,
+                                    fit_params=fit_params,
+                                    random_state=random_state)
+         # fit ICA on filtered data
+        ica.fit(raw_filtered)
+         # then tries to find the ecg artifacts in ica
+        ecg_epochs = mne.preprocessing.create_ecg_epochs(raw_filtered,
+                                                         reject=None,
+                                                         baseline=(None, -.02),
+                                                         tmin=-0.5,
+                                                         tmax=0.5)
+        ecg_evoked = ecg_epochs.average()
+        ecg_inds, ecg_scores = ica.find_bads_ecg(
+            ecg_epochs, method='ctps')
+        raw_filtered.load_data()
+        ica.exclude = components_to_exclude
+        if display_ica_plots:
+            ica.plot_sources(raw, show_scrollbars=False)
+            ica.plot_components()
+            ica.plot_scores(ecg_scores)
+            ica.plot_sources(ecg_evoked)
+            ica.plot_overlay(ecg_evoked)
+        print(f"Components excluded: {ica.exclude}") 
+        # apply ICA to raw data
+        raw_filtered_ICA = ica.apply(raw_filtered)
+
+   
+   
+    
     ##epoching
     if reject_bad_epochs:
-        epochs_ba = mne.Epochs(raw_filtered, 
+        epochs_ba = mne.Epochs(raw_filtered_ICA, 
                                ba_events_set, 
                                {'ba': 4}, 
                                tmin=tmin, 
@@ -334,7 +316,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
                                flat=flat_criteria, 
                                baseline=baseline, 
                                preload=True)
-        epochs_pa = mne.Epochs(raw_filtered, 
+        epochs_pa = mne.Epochs(raw_filtered_ICA, 
                                pa_events_set, 
                                {'pa': 8}, 
                                tmin=tmin,
@@ -343,7 +325,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
                                flat=flat_criteria,
                                baseline=baseline, 
                                preload=True)
-        epochs_fa = mne.Epochs(raw_filtered, 
+        epochs_fa = mne.Epochs(raw_filtered_ICA, 
                                fa_events_set, 
                                {'fa': 16}, 
                                tmin=tmin, 
@@ -352,7 +334,7 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
                                flat=flat_criteria,
                                baseline=baseline, 
                                preload=True)
-        epochs_va = mne.Epochs(raw_filtered, 
+        epochs_va = mne.Epochs(raw_filtered_ICA, 
                                va_events_set, 
                                {'va': 32},
                                tmin=tmin, 
@@ -374,6 +356,29 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
         epochs_fa = mne.Epochs(raw_filtered, fa_events_set, {'fa': 16}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
         epochs_va = mne.Epochs(raw_filtered, va_events_set, {'va': 32}, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)   
 
+    # Resample epochs to 250 Hz
+    desired_sfreq = 250
+    epochs_ba.resample(sfreq=desired_sfreq)
+    epochs_pa.resample(sfreq=desired_sfreq)
+    epochs_fa.resample(sfreq=desired_sfreq)
+    epochs_va.resample(sfreq=desired_sfreq)
+
+    if dropped_epoch_logging: 
+        print(epochs_ba.drop_log)
+        epochs_ba.plot_drop_log()
+        
+    if debugging: 
+        # Print the length of epochs
+        print(f'Length of epochs_ba: {len(epochs_ba)}')
+        
+        # To print the time points of each epoch, you can do:
+        print(f'Time points for each epoch: {epochs_ba.times}')
+        
+        # If you want to print the duration of each epoch in seconds:
+        epoch_duration = epochs_ba.times[-1] - epochs_ba.times[0]  # Length of one epoch
+        print(f'Duration of each epoch (in seconds): {epoch_duration}')
+
+    
     # Count epochs for this participant
     total_epochs_ba += len(epochs_ba)
     total_epochs_pa += len(epochs_pa)
@@ -396,24 +401,26 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
     # save evoked data
     mne.write_evokeds(output_dir / f'{participant_id}_{ICA_suffix}_{reject_suffix}-ave.fif', list(evokeds), overwrite=True)
 
-    if show_individual_plots:
-        # Define info for the plots
-        color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
-        linestyle_dict = {'pa': '-', 'ba': '-', 'fa': '-', 'va': '-'}
-        fig = mne.viz.plot_compare_evokeds(evokeds,
-                             ci=False,
-                             legend='upper left',
-                             show_sensors='upper right',
-                             colors=color_dict,
-                             linestyles=linestyle_dict,
-                             title=f'{participant_id} {onset_type} onset'
-                                ) 
-        plt.show()
-        plt.close()
 
+    # Define info for the plots
+    color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
+    linestyle_dict = {'pa': '-', 'ba': '-', 'fa': '-', 'va': '-'}
+    fig = mne.viz.plot_compare_evokeds(evokeds,
+                         ci=False,
+                         legend='upper left',
+                         show_sensors='upper right',
+                         colors=color_dict,
+                         linestyles=linestyle_dict,
+                         show=show_individual_plots
+                         title=f'{participant_id} {onset_type} onset'
+                            ) 
+    plt.savefig(f'{plot_directory}/ERPs_{onset_type}_{participant_id}_{ICA_file}.pdf')
+    plt.close()
+
+    if show_individual_plots: 
         # topographic map to check eye activity
         fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
-        times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450]
+        times = [0.250, 0.300, 0.350, 0.400, 0.450, 0.500]
         evokeds[0].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
         evokeds[1].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
         evokeds[2].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
@@ -424,9 +431,11 @@ for participant_id, components_to_exclude in tqdm(participant_components.items()
         plt.close()
 
     # delete variables to free up memory
-    del raw, raw_meg, raw_filtered, epochs_ba, epochs_pa, epochs_fa, epochs_va
+    del raw, raw_meg, raw_filtered, flat_channels
+    del epochs_ba, epochs_pa, epochs_fa, epochs_va, epochs_data
     del ba_evoked, pa_evoked, fa_evoked, va_evoked, evokeds
-    
+
+
 # Print final epoch counts
 print(f"Total BA epochs across all datasets: {total_epochs_ba}")
 print(f"Total PA epochs across all datasets: {total_epochs_pa}")
