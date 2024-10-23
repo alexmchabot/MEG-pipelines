@@ -1,0 +1,873 @@
+import os
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+
+
+# Select protocol and onset type
+protocol = 'protocol02'
+onset_type = 'consonant'  # 'vowel' or 'consonant' based on your needs
+averaging_pipeline = 'across_participant'  #two methods to get averages 1) 'per_participant' extract epochs -> average epochs per participant and produce evoked -> grand average all evoked 2) = 'across_participant': extract epochs -> average all epochs across participants
+date = 'October 23'
+       
+ICA = True                 
+reject_bad_epochs = True                   
+plot_show = False                                            
+
+# list of participant IDs
+participant_ids = ['R3027', #1 
+                   'R3039', #2 
+                   'R3401', #3 
+                   'R3703', #4 
+                   'R3078', #5 
+                   'R3079', #6 
+                   'R3086', #7 
+                   'R3090', #8 
+                   'R3109', #9 
+                   'R3112', #10 
+                   'R3113', #11 
+                   'R3117', #12 
+                   'R3120', #13 
+                   'R3124', #14 
+                   'R3126'  #15 
+                  ]
+n = 'n=' + str(len(participant_ids))
+
+conditions = ['ba_4', 'ba_5', 'ba_6', 
+              'fa_4', 'fa_5', 'fa_6', 
+              'va_4', 'va_5', 'va_6', 
+              'all_ba_pa', 'all_fa_pa', 'all_va_pa']
+
+
+#don't change below unless its forever
+#loading directory
+# Define dataset based on onset type
+dataset = 'V_onset' if onset_type == 'vowel' else 'C_onset'
+data_dir = pathlib.Path(f'../../out_data/{protocol}/{dataset}')
+
+# out files
+evoked_method = "across_participant" if averaging_pipeline == 'across_participant' else "per_participant"
+ICA_suffix = "ICA" if ICA else ""
+reject_suffix = "bad_epochs_rejected" if reject_bad_epochs else ""
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}/{averaging_pipeline}')
+if not plot_directory.exists():
+    plot_directory.mkdir(parents=True)
+
+# define file names for saving based on ICA variable
+ICA_file = "ICA" if ICA else ""
+reject_file = "bad_epochs_rejected" if reject_bad_epochs else ""
+
+##loading evokeds
+if averaging_pipeline == 'per_participant':
+    erp_dicts = {}  # Dictionary for all conditions
+    
+    
+    # Loop over participant IDs and conditions to load evoked data
+    for participant_id in participant_ids:
+        for condition in conditions:
+            try:
+                file_path = data_dir / f"{participant_id}_{onset_type}_evoked_{condition}-ave.fif"
+                print(f"Attempting to read: {file_path}")  # Debugging line
+                
+                # Read evoked data (returns a list of evoked objects)
+                evokeds_list = mne.read_evokeds(file_path, baseline=None)
+                
+                # You need to determine which evoked object to use if multiple are returned
+                # Assuming you want the first evoked object from the list:
+                evoked = evokeds_list[0]
+                
+                # Store the evoked object directly into the dictionary
+                if condition not in erp_dicts:
+                    erp_dicts[condition] = []
+                
+                erp_dicts[condition].append(evoked)  # Append the evoked object
+                
+            except FileNotFoundError:
+                print(f"File not found for {participant_id} with condition {condition}. Skipping.")
+            except Exception as e:
+                print(f"An error occurred for {participant_id} with condition {condition}: {e}. Skipping.")
+    
+    
+    
+    
+    #end of loading
+    # Print the ERPs and their counts for each condition dictionary
+    for condition, evoked_list in erp_dicts.items():
+        print(f"\nCondition: {condition}")
+        total_epochs = 0  
+        for idx, evoked in enumerate(evoked_list):
+            print(f"Participant {idx + 1}: {evoked.nave} epochs")
+            total_epochs += evoked.nave  
+        print(f"Total epochs for {condition}: {total_epochs}")
+    
+    evoked_mapping = {
+        'ba_4': 'ba4_pa',
+        'ba_5': 'ba5_pa',
+        'ba_6': 'ba6_pa',
+        'fa_4': 'fa4_pa',
+        'fa_5': 'fa5_pa',
+        'fa_6': 'fa6_pa',
+        'va_4': 'va4_pa',
+        'va_5': 'va5_pa',
+        'va_6': 'va6_pa'
+    }
+    
+    # Filter the set_evks dictionaries to make two dictionaries
+    evks_4_6 = {evoked_mapping[condition]: evoked for condition, evoked in erp_dicts.items() if condition in evoked_mapping}
+    evks_all = {condition: evoked for condition, evoked in erp_dicts.items() if condition in ['all_ba_pa', 
+                                                                                              'all_fa_pa',
+                                                                                              'all_va_pa']}
+    evks_6th = {condition: evoked for condition, evoked in evks_4_6.items() if condition in ['ba6_pa',
+                                                                                             'fa6_pa',
+                                                                                             'va6_pa']}
+    
+    
+    
+    
+    # remap the conditions to ones that are easier to read, and also will serve as the legend on plots
+    # Rename the keys in erp_dicts based on the mapping
+    evks_4_6 = {evoked_mapping.get(cond, cond): evoked for cond, evoked in evks_4_6.items()}
+
+    ##plot all 9 conditions
+    # Color and linestyle dictionaries based on category and number suffix
+    color_dict_4_6 = {
+        'ba4_pa': '#0000FF20',     # Blue
+        'ba5_pa': '#0000FF50',   # Blue with 50% transparency
+        'ba6_pa': '#0000FF',    # Blue
+    
+        'fa4_pa': '#00800020',   # Green 
+        'fa5_pa': '#00800050',   # Green with 50% transparency
+        'fa6_pa': '#008000',    # Green with 12.5% transparency
+    
+        'va4_pa': '#FF000020',     # Red
+        'va5_pa': '#FF000050',   # Red with 50% transparency
+        'va6_pa': '#FF0000'   # Red with 12.5% transparency
+    }
+    
+    linestyle_dict_4_6 = {
+        'ba4_pa': '-',
+        'ba5_pa': '-',
+        'ba6_pa': '-',
+        'fa4_pa': '-',
+        'fa5_pa': '-',
+        'fa6_pa': '-',
+        'va4_pa': '-',
+        'va5_pa': '-',
+        'va6_pa': '-'
+    }
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evks_4_6,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_4_6,
+                                       ci=.50,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show = plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6_CI_50.pdf')
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evks_4_6,
+                                       ci=.95,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6_CI_95.pdf')
+    
+    #only those PAs which follow 6 deviants
+    linestyle_dict_6th = {  
+        'ba6_pa': '-',
+        'fa6_pa': '-',
+        'va6_pa': '-'
+    }
+    
+    color_dict_6th = {
+        'ba6_pa': 'blue',
+        'fa6_pa': 'green',
+        'va6_pa': 'red'
+    }
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                       ci=.50,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_CI_50.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                       ci=.95,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_CI_50.pdf')
+    
+    #plot all PAs after all deviants
+    
+    linestyle_dict_all = {  
+        'all_ba_pa': '-',
+        'all_fa_pa': '-',
+        'all_va_pa': '-'
+    }
+    
+    color_dict_all = {
+        'all_ba_pa': 'blue',
+        'all_fa_pa': 'green',
+        'all_va_pa': 'red'
+    }
+    
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evks_all,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_all,
+                                       ci=.50,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_CI_50.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_all,
+                                       ci=.95,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_CI_50.pdf')
+    
+    #list of left hemi sphere chans
+    condition = 'all_ba_pa'  
+    evoked_list = evks_all[condition]  
+    left_hemi_chans = [
+        ch_name for evoked in evoked_list for ch_name, pos in zip(evoked.info['ch_names'], evoked.info['chs'])
+        if pos['loc'][0] < 0  
+    ]
+    
+    fig = mne.viz.plot_compare_evokeds(evks_4_6,
+                                       picks = left_hemi_chans,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6_left_hemi_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                       picks = left_hemi_chans,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_left_hemi_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_all,
+                                       picks = left_hemi_chans,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_left_hemi_chans.pdf')
+    
+    
+    # Define values for cropping the evoked data to the time span of interest
+    crop_min = 0.225  # Start time for cropping
+    crop_max = 0.500  # End time for cropping
+    
+    # Initialize empty lists to store cropped evoked objects
+    evks_crop_ba = []
+    evks_crop_fa = []
+    evks_crop_va = []
+    
+    # Crop the evoked objects for each condition
+    for evoked in evks_all['all_ba_pa']:
+        evks_crop_ba.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+    
+    for evoked in evks_all['all_fa_pa']:
+        evks_crop_fa.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+    
+    for evoked in evks_all['all_va_pa']:
+        evks_crop_va.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+    
+    # Combine the cropped evoked objects into single evoked objects for each condition
+    evks_crop_ba = mne.combine_evoked(evks_crop_ba, weights='equal')
+    evks_crop_fa = mne.combine_evoked(evks_crop_fa, weights='equal')
+    evks_crop_va = mne.combine_evoked(evks_crop_va, weights='equal')
+    
+    # Now combine all evoked conditions into a single evoked object
+    evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_fa, evks_crop_va], weights='equal')
+    
+    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evks_crop.ch_names, evks_crop.info['chs']) if pos['loc'][0] < 0]
+    # Get the indices of the left hemisphere channels
+    left_hemi_indices = [evks_crop.ch_names.index(ch) for ch in left_hemisphere_chs]
+    
+    # Calculate the max and min amplitudes for the left hemisphere channels only
+    max_amps = np.max(evks_crop.data[left_hemi_indices, :], axis=1)
+    min_amps = np.min(evks_crop.data[left_hemi_indices, :], axis=1)
+    
+    # Sort the left hemisphere channels by maximum and minimum amplitudes
+    sorted_max_indices = np.argsort(max_amps)[-10:][::-1] 
+    sorted_min_indices = np.argsort(min_amps)[:10]  
+    
+    # Select the corresponding channel indices from left_hemi_indices
+    highest_channels_left = [left_hemi_indices[i] for i in sorted_max_indices]
+    lowest_channels_left = [left_hemi_indices[i] for i in sorted_min_indices]
+    
+    
+    # Combine the highest and lowest channels and ensure no duplicates
+    peak_channels_left = list(set(highest_channels_left) | set(lowest_channels_left))
+    
+    # Plot the evoked responses for the extreme left hemisphere channels
+    evks_crop.plot(exclude='bads', picks=peak_channels_left, window_title='Evoked Responses (Left Hemisphere)', show=True)
+    
+    fig = mne.viz.plot_compare_evokeds(evks_4_6,
+                                       picks = peak_channels_left,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6_peak_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                       picks = peak_channels_left,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_peak_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                       picks = peak_channels_left,
+                                       ci=.50,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_peak_chans_CI_50.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_all,
+                                       picks = peak_channels_left,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_peak_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evks_all,
+                                       picks = peak_channels_left,
+                                       ci=.50,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_peak_chans_CI_50.pdf')
+    
+    #plot 9 butterfly plots, one of each condition
+    # Define the list of conditions for which to create butterfly plots
+    conditions = ['ba4_pa', 'ba5_pa', 'ba6_pa', 'ba4_pa', 'ba5_pa', 'ba6_pa', 'ba4_pa', 'ba5_pa', 'ba6_pa']
+    # Create a 3x3 grid of subplots for the butterfly plots
+    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(18, 12))
+    # Flatten the axes array for easier indexing
+    axes = axes.flatten()
+    # Loop through the conditions and plot each butterfly plot
+    for i, condition in enumerate(conditions):
+        # Combine the evoked responses for the current condition
+        evoked_combined = mne.combine_evoked(evks_4_6[condition], weights='equal')
+        # Plot the combined evoked data as a butterfly plot
+        evoked_combined.plot(exclude='bads', spatial_colors=True, axes=axes[i], show=False)
+        # Set the title for each subplot
+        axes[i].set_title(f'Combined {condition.upper()} Evoked (Butterfly Plot)')
+    # Adjust the y-limits to be the same for all plots
+    max_ylim = max([ax.get_ylim()[1] for ax in axes if len(ax.lines) > 0])
+    for ax in axes:
+        if len(ax.lines) > 0:
+            ax.set_ylim([-max_ylim, max_ylim])
+    plt.suptitle(f'{protocol} All Channels Butterfly Plots 4-6 conditions', fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    if plot_show:
+        plt.show() 
+        
+    plt.savefig(plot_directory / f'butterfly_{evoked_method}_4_to_6_deviants_PA.pdf')
+    
+    
+    #butterfly plots of all deviants
+    #Create subplots for the butterfly plots
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 10))
+    
+    # Combine and plot BA Evoked objects
+    ba_evoked_combined = mne.combine_evoked(evks_all['all_ba_pa'], weights='equal')
+    ba_evoked_combined.plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
+    axes[0, 0].set_title('Combined BA Evoked, all channels')
+    
+    
+    # Combine and plot FA Evoked objects
+    fa_evoked_combined = mne.combine_evoked(evks_all['all_fa_pa'], weights='equal')
+    fa_evoked_combined.plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
+    axes[0, 1].set_title('Combined FA Evoked, all channels')
+    
+    
+    # Combine and plot VA Evoked objects
+    
+    va_evoked_combined = mne.combine_evoked(evks_all['all_va_pa'], weights='equal')
+    va_evoked_combined.plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
+    axes[1, 0].set_title('Combined VA Evoked, all channels')
+    
+    # Turn off unused fourth subplot
+    axes[1, 1].axis('off')
+    
+    # Adjust y-limits for uniformity
+    max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten() if len(ax.lines) > 0])
+    for ax in axes.flatten():
+        if len(ax.lines) > 0:  # Only adjust y-limits for axes with data
+            ax.set_ylim([-max_ylim, max_ylim])
+    
+    # Add a title to the entire figure
+    plt.suptitle(f'{protocol} All channels, all deviant conditions', fontsize=14)
+    # Adjust layout and display the plot
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    if plot_show:
+        plt.show()
+    plt.savefig(plot_directory / f'butterfly_{evoked_method}_PAx6_deviants.pdf')
+    
+    # Create subplots for the topographic maps
+    fig, axs = plt.subplots(3, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1], 'hspace': 0})
+    
+    # Time intervals for the topographic maps
+    times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450]
+    
+    
+    # Plot the topographic maps for each averaged condition
+    ba_evoked_combined.plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
+    fa_evoked_combined.plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
+    va_evoked_combined.plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
+    
+    # Add captions to each row relative to the subplots
+    for i, label in enumerate(['PA X 4-6 -> BA', 'PA X 4-6 ->FA', 'PA X 4-6 ->VA']):
+        axs[i, 0].text(-0.1, 1.05, label, transform=axs[i, 0].transAxes, fontsize=12, va='center', ha='right')
+    
+    # Add a global caption
+    fig.suptitle(f'{protocol} MEG Topographic Plots: 200-450 ms; all deviant conditions')
+    
+    # Show the plot
+    plt.savefig(plot_directory / f'topo_{evoked_method}_3_pa_after_deviants.pdf')
+    plt.show() if plot_show else plt.close()
+
+
+
+###load epochs and average them all together across participants
+if averaging_pipeline == 'across_participant':
+    ##loading epochs
+    all_epochs = {
+        'ba_4': [],
+        'ba_5': [],
+        'ba_6': [], 
+        'fa_4': [], 
+        'fa_5': [], 
+        'fa_6': [], 
+        'va_4': [], 
+        'va_5': [], 
+        'va_6': [], 
+        'all_ba_pa': [],
+        'all_fa_pa': [],
+        'all_va_pa': []
+    }
+    
+    # Loop over participant IDs and conditions to load epoched data
+    for participant_id in participant_ids:
+        for condition in conditions:
+            try:
+                epochs = mne.read_epochs(data_dir / f"{participant_id}_{onset_type}_epochs_{condition}-epo.fif")
+                all_epochs[condition].append(epochs)  # Store epochs in the appropriate list
+            except FileNotFoundError:
+                print(f"File not found for {participant_id} and event type {event_type}. Skipping.")
+            except Exception as e:
+                print(f"An error occurred for {participant_id} and event type {event_type}: {e}. Skipping.")
+    
+    
+    
+    # End of loading
+    # Print the rpochs and their counts for each condition dictionary
+    for condition, epochs_list in all_epochs.items():
+        print(f"\nCondition: {condition}")
+        total_epochs = 0  
+        for idx, epochs in enumerate(epochs_list):  # Use 'epochs_list'
+            num_epochs = len(epochs)  # Get the number of epochs directly
+            print(f"Participant {idx + 1}: {num_epochs} epochs")
+            total_epochs += num_epochs  
+        print(f"Total epochs for {condition}: {total_epochs}")
+    
+    # Initialize a dictionary to store individual ERPs for each condition
+    set_evks = {condition: [] for condition in all_epochs.keys()}
+    
+    # Iterate through each condition in all_epochs
+    for condition, epochs_list in all_epochs.items():
+        # Calculate the ERP for each condition
+        if epochs_list:  # Check if there's at least one entry
+            combined_epochs = mne.concatenate_epochs(epochs_list)  # Combine all epochs for the current condition
+            evk_across_parts = combined_epochs.average()  # Average epochs to create the evoked object
+            set_evks[condition] = evk_across_parts  # Store the averaged evoked object
+        else:
+            print(f"No epochs found for condition {condition}. Skipping.")
+    
+    
+    
+    evoked_mapping = {
+        'ba_4': 'ba4_pa',
+        'ba_5': 'ba5_pa',
+        'ba_6': 'ba6_pa',
+        'fa_4': 'fa4_pa',
+        'fa_5': 'fa5_pa',
+        'fa_6': 'fa6_pa',
+        'va_4': 'va4_pa',
+        'va_5': 'va5_pa',
+        'va_6': 'va6_pa'
+    }
+    
+    # Filter the set_pochss dictionaries to make two dictionaries
+    evoked_4_6 = {evoked_mapping[condition]: evoked for condition, evoked in set_evks.items() if condition in evoked_mapping}
+    
+    evoked_all = {condition: evoked for condition, evoked in set_evks.items() if condition in ['all_ba_pa', 
+                                                                                               'all_fa_pa',
+                                                                                               'all_va_pa']}
+    
+    evoked_6th = {condition: evoked for condition, evoked in evoked_4_6.items() if condition in ['ba6_pa',
+                                                                                                 'fa6_pa',
+                                                                                                 'va6_pa']}
+    
+    
+    
+    
+    # remap the conditions to ones that are easier to read, and also will serve as the legend on plots
+    # Rename the keys in erp_dicts based on the mapping
+    evoked_4_6 = {evoked_mapping.get(cond, cond): epoch for cond, epoch in evoked_4_6.items()}
+    
+    ##plot all 9 conditions
+    # Color and linestyle dictionaries based on category and number suffix
+    color_dict_4_6 = {
+        'ba4_pa': '#0000FF20',     # Blue
+        'ba5_pa': '#0000FF50',   # Blue with 50% transparency
+        'ba6_pa': '#0000FF',    # Blue
+    
+        'fa4_pa': '#00800020',   # Green 
+        'fa5_pa': '#00800050',   # Green with 50% transparency
+        'fa6_pa': '#008000',    # Green with 12.5% transparency
+    
+        'va4_pa': '#FF000020',     # Red
+        'va5_pa': '#FF000050',   # Red with 50% transparency
+        'va6_pa': '#FF0000'   # Red with 12.5% transparency
+    }
+    
+    linestyle_dict_4_6 = {
+        'ba4_pa': '-',
+        'ba5_pa': '-',
+        'ba6_pa': '-',
+        'fa4_pa': '-',
+        'fa5_pa': '-',
+        'fa6_pa': '-',
+        'va4_pa': '-',
+        'va5_pa': '-',
+        'va6_pa': '-'
+    }
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_4_6,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6.pdf')
+    
+    #only those PAs which follow 6 deviants
+    linestyle_dict_6th = {  
+        'ba6_pa': '-',
+        'fa6_pa': '-',
+        'va6_pa': '-'
+    }
+    
+    color_dict_6th = {
+        'ba6_pa': 'blue',
+        'fa6_pa': 'green',
+        'va6_pa': 'red'
+    }
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_6th,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th.pdf')
+    
+    linestyle_dict_all = {  
+        'all_ba_pa': '-',
+        'all_fa_pa': '-',
+        'all_va_pa': '-'
+    }
+    
+    color_dict_all = {
+        'all_ba_pa': 'blue',
+        'all_fa_pa': 'green',
+        'all_va_pa': 'red'
+    }
+    
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_all,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all.pdf')
+    
+    #list of left hemi sphere chans
+    condition = 'all_ba_pa'  
+    evoked = evoked_all[condition]
+    left_hemi_chans = [
+        ch_name for ch_name, pos in zip(evoked.info['ch_names'], evoked.info['chs'])
+        if pos['loc'][0] < 0  # Check for negative x-coordinate (left hemisphere)
+    ]
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_4_6,
+                                       picks = left_hemi_chans,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6_left_hemi_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_6th,
+                                       picks = left_hemi_chans,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_left_hemi_chans.pdf')
+
+    fig = mne.viz.plot_compare_evokeds(evoked_all,
+                                       picks = left_hemi_chans,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_left_hemi_chans.pdf')
+    
+    # Define values for cropping the evoked data to the time span of interest
+    crop_min = 0.225  # Start time for cropping
+    crop_max = 0.500  # End time for cropping
+    
+    # Initialize empty lists to store cropped evoked objects
+    evks_crop_ba = []
+    evks_crop_fa = []
+    evks_crop_va = []
+    
+    # Crop the evoked objects for each condition
+    evoked_ba = evoked_all['all_ba_pa']  # Single Evoked object
+    evks_crop_ba.append(evoked_ba.copy().crop(tmin=crop_min, tmax=crop_max))
+    
+    # Cropping 'all_fa_pa'
+    evoked_fa = evoked_all['all_fa_pa']  # Single Evoked object
+    evks_crop_fa.append(evoked_fa.copy().crop(tmin=crop_min, tmax=crop_max))
+    
+    # Cropping 'all_va_pa'
+    evoked_va = evoked_all['all_va_pa']  # Single Evoked object
+    evks_crop_va.append(evoked_va.copy().crop(tmin=crop_min, tmax=crop_max))
+    
+    # Combine the cropped evoked objects into single evoked objects for each condition
+    evks_crop_ba = mne.combine_evoked(evks_crop_ba, weights='equal')
+    evks_crop_fa = mne.combine_evoked(evks_crop_fa, weights='equal')
+    evks_crop_va = mne.combine_evoked(evks_crop_va, weights='equal')
+    
+    # Now combine all evoked conditions into a single evoked object
+    evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_fa, evks_crop_va], weights='equal')
+    
+    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evks_crop.ch_names, evks_crop.info['chs']) if pos['loc'][0] < 0]
+    # Get the indices of the left hemisphere channels
+    left_hemi_indices = [evks_crop.ch_names.index(ch) for ch in left_hemisphere_chs]
+    
+    # Calculate the max and min amplitudes for the left hemisphere channels only
+    max_amps = np.max(evks_crop.data[left_hemi_indices, :], axis=1)
+    min_amps = np.min(evks_crop.data[left_hemi_indices, :], axis=1)
+    
+    # Sort the left hemisphere channels by maximum and minimum amplitudes
+    sorted_max_indices = np.argsort(max_amps)[-10:][::-1] 
+    sorted_min_indices = np.argsort(min_amps)[:10]  
+    
+    # Select the corresponding channel indices from left_hemi_indices
+    highest_channels_left = [left_hemi_indices[i] for i in sorted_max_indices]
+    lowest_channels_left = [left_hemi_indices[i] for i in sorted_min_indices]
+    
+    
+    # Combine the highest and lowest channels and ensure no duplicates
+    peak_channels_left = list(set(highest_channels_left) | set(lowest_channels_left))
+    
+    # Plot the evoked responses for the extreme left hemisphere channels
+    evks_crop.plot(exclude='bads', picks=peak_channels_left, window_title='Evoked Responses (Left Hemisphere)', show=True)
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_4_6,
+                                       picks = peak_channels_left,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_4_6,
+                                       linestyles=linestyle_dict_4_6,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 4-6 sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_4_6_peak_chans.pdf')
+    
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_6th,
+                                       picks = peak_channels_left,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_6th,
+                                       linestyles=linestyle_dict_6th,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after 6th deviant',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_6th_peak_chans.pdf')
+    
+    fig = mne.viz.plot_compare_evokeds(evoked_all,
+                                       picks = peak_channels_left,
+                                       ci=False,
+                                       legend='upper left',
+                                       show_sensors='upper right',
+                                       #ylim=dict(mag=[0, 30]),
+                                       colors=color_dict_all,
+                                       linestyles=linestyle_dict_all,
+                                       show=plot_show,
+                                       title=f'{protocol} participants ({n}), pa ERPs after all sequences of deviants',
+                                       )
+    plt.savefig(plot_directory / f'ERP_{evoked_method}_evks_all_peak_chans.pdf')
