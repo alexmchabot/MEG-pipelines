@@ -1,599 +1,174 @@
-#this script works as intended as of 10/16/2024
-#this is for plotting protocol 1
-
-import os
-import pathlib
-import numpy as np
-import matplotlib
-matplotlib.use('Qt5Agg')
-import matplotlib.pyplot as plt
-import mne
-
-# Select protocol and onset type
-protocol = 'protocol01'
-onset_type = 'consonant'  # 'vowel' or 'consonant' based on your needs
 averaging_pipeline = 'across_participant'  #two methods to get averages 1) 'per_participant' extract epochs -> average epochs per participant and produce evoked -> grand average all evoked 2) = 'across_participant': extract epochs -> average all epochs across participants
-
-# Define dataset based on onset type
-dataset = 'V_onset' if onset_type == 'vowel' else 'C_onset'
-time_shift = 0.00          
-ICA = True                 
-reject_bad_epochs = True
-date = 'October 18'            
-n = 'n=14'                 
-plot_show = False                                            
-
-
-#don't change below unless its forever
-plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}/{averaging_pipeline}')
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}/{averaging_pipeline}')
 if not plot_directory.exists():
     plot_directory.mkdir(parents=True)
 
-#variables for file names
-evoked_method = "across_participant" if averaging_pipeline == 'across_participant' else "per_participant"
+# define file names for saving based on ICA variable
 ICA_suffix = "ICA" if ICA else ""
 reject_suffix = "bad_epochs_rejected" if reject_bad_epochs else ""
-data_dir = pathlib.Path(f'../../out_data/{protocol}/{dataset}')
+evoked_method = "across_participant" if averaging_pipeline == 'across_participant' else "per_participant"
 
+if averaging_pipeline == 'across_participant':
+    
+    # Initialize a dictionary to store ERPs 
+    evks = {}
+    # Iterate through each condition in all_pa_epochs
+    for condition, epochs_list in all_pa_epochs.items():
+        # Combine all epochs across participants for the current condition
+        combined_epochs = mne.concatenate_epochs(epochs_list)
+        # Calculate the ERP (average across epochs)
+        evk = combined_epochs.average()
+        # Store the ERP in the dictionary
+        evks[condition] = evk
 
-
-
-parts = {
-    'part01': 'R2830', 
-    'part02': 'R2890', 
-    'part03': 'R2896', 
-    'part04': 'R2897', 
-    'part05': 'R2900', 
-    'part06': 'R2906', 
-    'part07': 'R2915', 
-    'part08': 'R2968', 
-    'part09': 'R2976', 
-    'part10': 'R2996', 
-    'part11': 'R2997', 
-    'part12': 'R3005', 
-    'part13': 'R3007', 
-    'part14': 'R3008'
-}
-
-# Loads evoked objects per data set, and then averages all evoked objects in a grand average.
-if averaging_pipeline == 'per_participant':
-    erp_dict = {}
-    # Load the saved epochs for each participant
-    for part_label, participant_id in parts.items():
-        try:
-            evokeds = mne.read_evokeds(data_dir / f"{participant_id}_{ICA_suffix}_{reject_suffix}-ave.fif", baseline=None)
-            # Check if the evokeds object is empty
-            if not evokeds:
-                print(f"The dataset for {participant_id} is empty. Skipping.")
-                continue
-            erp_dict[f"{part_label}_evokeds"] = evokeds
-        except FileNotFoundError:
-            print(f"File not found for {participant_id}. Skipping.")
-        except Exception as e:
-            print(f"An error occurred for {participant_id}: {e}. Skipping.")
-    
-    # Initialize empty lists to store evoked objects for each condition
-    ba_evokeds = []
-    pa_evokeds = []
-    fa_evokeds = []
-    va_evokeds = []
-    
-    # Loop over participants and accumulate the ERPs for each condition
-    for part_label in parts:
-        try:
-            for evoked in erp_dict[f"{part_label}_evokeds"]:
-                # Add the evoked data directly to the appropriate list based on its comment
-                if 'ba' in evoked.comment:
-                    ba_evokeds.append(evoked)
-                elif 'pa' in evoked.comment:
-                    pa_evokeds.append(evoked)
-                elif 'fa' in evoked.comment:
-                    fa_evokeds.append(evoked)
-                elif 'va' in evoked.comment:
-                    va_evokeds.append(evoked)
-        except KeyError:
-            print(f"Missing evokeds for {part_label}. Skipping this participant for certain conditions.")
-        except Exception as e:
-            print(f"An error occurred for {part_label}: {e}. Skipping.")
+    # Calculate the number of participants based on the evoked objects
+    num_participants_used = len(epochs_list)
+    # Adjust the title with the correct number of participants
+    title = f'{protocol} participants ({num_participants_used}), {onset_type} onset {ICA_file} {ICA_file} {reject_suffix}'
     
     
-    # Optionally, you can print the number of evoked objects averaged for each condition
-    print(f"Averaged {len(ba_evokeds)} BA evokeds.")
-    print(f"Averaged {len(pa_evokeds)} PA evokeds.")
-    print(f"Averaged {len(fa_evokeds)} FA evokeds.")
-    print(f"Averaged {len(va_evokeds)} VA evokeds.")
-    
-    evks = {
-    'ba': ba_evokeds,
-    'pa': pa_evokeds,
-    'fa': fa_evokeds,
-    'va': va_evokeds
-    }
-    
-    # Print the number of events (epochs) for each condition in evks
-    for condition, evoked_list in evks.items():
-        print(f"\nCondition: {condition}")
-        for idx, evoked in enumerate(evoked_list):
-            print(f"Participant {idx + 1}: Number of Events (nave): {evoked.nave}")
-        
     # Define info for the plots
-    color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
-    linestyle_dict = {'pa': '-', 'ba': '-', 'fa': '-', 'va': '-'}
+    color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
+    linestyle_dict = {'pa1': '-', 'pa2': '-', 'pa3': '-', 'pa4': '-', 'pa5': '-', 'pa6': '-'}
     
-    # Plot all channels for all participants (GFP, Mean, Butterfly, Topo)
-    # Plot comparing all grand averages
+    #all channels for all participants
     fig = mne.viz.plot_compare_evokeds(evks,
-                                       ci=False,
-                                       legend='upper left',
-                                       show_sensors='upper right',
-                                       colors=color_dict,
-                                       linestyles=linestyle_dict,
-                                       title=f'{protocol} participants ({n}), {onset_type} onset{ICA_suffix} {reject_suffix}',
-                                       show=plot_show)   
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
-    fig = mne.viz.plot_compare_evokeds(evks,
-                                       ci=.50,
-                                       legend='upper left',
-                                       show_sensors='upper right',
-                                       colors=color_dict,
-                                       linestyles=linestyle_dict,
-                                       title=f'{protocol} participants ({n}), {onset_type} {ICA_suffix} {reject_suffix}',
-                                       show=plot_show)   
-    plt.savefig(f'{plot_directory}/ERP_CI_50{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-    
-    # Plot comparing all grand averages with the mean combine
-    fig = mne.viz.plot_compare_evokeds(evks,
-                                       combine='mean',
-                                       ci=False,
-                                       legend='upper left',
-                                       show_sensors='upper right',
-                                       colors=color_dict,
-                                       linestyles=linestyle_dict,
-                                       title=f'{protocol} participants ({n}), {onset_type} onset {ICA_suffix} mean {reject_suffix}',
-                                       show=plot_show)
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_{onset_type}_{ICA_suffix}_mean_{reject_suffix}.pdf')
-    plt.close()
-
-
-    
-    #channel selection
-    # channel names for left hemisphere (based on negative x-coordinate)
-    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evoked.info['ch_names'], evoked.info['chs']) if pos['loc'][0] < 0]
-    # pass the list of Evoked objects for each condition
-    
-    mne.viz.plot_compare_evokeds(evks,
                                  ci=False,
-                                 combine='gfp',
-                                 picks=left_hemisphere_chs,
                                  legend='upper left',
                                  show_sensors='upper right',
                                  colors=color_dict,
                                  linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_left_hemisphere_chans_{onset_type}{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=plot_show,    
+                                 #ylim=dict(mag=[0, 30])# set y-axis limits
+                                      ) 
+    plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
     
-    mne.viz.plot_compare_evokeds(evks,
-                                 combine='gfp',
-                                 picks=left_hemisphere_chs,
-                                 ci=.50,  # Confidence interval
-                                 legend='upper left',
-                                 show_sensors='upper right',
-                                 colors=color_dict,
-                                 linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_left_hemisphere_chans_CI_50{onset_type}{ICA_suffix}{reject_suffix}.pdf')
-    plt.close()
-    
-    mne.viz.plot_compare_evokeds(evks,
-                                 combine='gfp',
-                                 picks=left_hemisphere_chs,
-                                 ci=.95,  # Confidence interval
-                                 legend='upper left',
-                                 show_sensors='upper right',
-                                 colors=color_dict,
-                                 linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_left_hemisphere_chans_CI_95_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-           
-    #channel selection, plot only dipole on left hemisphere by looking for highest absolute amplitude channels in left hemisphere
-    
-    # Define values for cropping the evoked data to the time span of interest
-    crop_min = 0.200  # Start time for cropping
-    crop_max = 0.450  # End time for cropping
-    
-    # Initialize lists for cropped evoked objects
-    evks_crop_ba = []
-    evks_crop_pa = []
-    evks_crop_fa = []
-    evks_crop_va = []
-    # Assuming evks is a dictionary with each key corresponding to a list of evoked objects
-    for key in ['ba', 'pa', 'fa', 'va']:
-        if key in evks and isinstance(evks[key], list):
-            for evoked in evks[key]:
-                if evoked is not None:
-                    if key == 'ba':
-                        evks_crop_ba.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
-                    elif key == 'pa':
-                        evks_crop_pa.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
-                    elif key == 'fa':
-                        evks_crop_fa.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
-                    elif key == 'va':
-                        evks_crop_va.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
-        else:
-            print(f"No evoked data for {key} or it's not a list.")
-    # Combine the cropped evoked objects into single evoked objects for each condition
-    if evks_crop_ba:
-        evks_crop_ba = mne.combine_evoked(evks_crop_ba, weights='equal')
-    else:
-        print("No evoked objects for BA after cropping.")
-    if evks_crop_pa:
-        evks_crop_pa = mne.combine_evoked(evks_crop_pa, weights='equal')
-    else:
-        print("No evoked objects for PA after cropping.")
-    if evks_crop_fa:
-        evks_crop_fa = mne.combine_evoked(evks_crop_fa, weights='equal')
-    else:
-        print("No evoked objects for FA after cropping.")
-    if evks_crop_va:
-        evks_crop_va = mne.combine_evoked(evks_crop_va, weights='equal')
-    else:
-        print("No evoked objects for VA after cropping.")
-    # Now combine all evoked conditions into a single evoked object
-    evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_pa, evks_crop_fa, evks_crop_va], weights='equal')
-    # Get the channel names for the left hemisphere (based on negative x-coordinate)
-    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evks_crop.ch_names, evks_crop.info['chs']) if pos['loc'][0] < 0]
-    # Get the indices of the left hemisphere channels
-    left_hemi_indices = [evks_crop.ch_names.index(ch) for ch in left_hemisphere_chs]
-    # Check if any left hemisphere channels were found
-    if not left_hemi_indices:
-        print("No left hemisphere channels found for plotting.")
-    else:
-        # Calculate the max and min amplitudes for the left hemisphere channels only
-        max_amps_left = np.max(evks_crop.data[left_hemi_indices, :], axis=1)
-        min_amps_left = np.min(evks_crop.data[left_hemi_indices, :], axis=1)
-        # Sort the left hemisphere channels by maximum and minimum amplitudes
-        sorted_max_indices = np.argsort(max_amps_left)[-10:][::-1]  # Indices for highest amplitudes
-        sorted_min_indices = np.argsort(min_amps_left)[:10]  # Indices for lowest amplitudes
-        # Select the corresponding channel indices from left_hemi_indices
-        highest_channels_left = [left_hemi_indices[i] for i in sorted_max_indices]
-        lowest_channels_left = [left_hemi_indices[i] for i in sorted_min_indices]
-        # Print the channel names and amplitudes
-        print('Left hemisphere channels with highest amplitudes:')
-        for i, ch in enumerate(highest_channels_left):
-            print(f'{i+1}. {evks_crop.ch_names[ch]}: {max_amps_left[sorted_max_indices[i]]:.3f}')
-        print('\nLeft hemisphere channels with lowest amplitudes:')
-        for i, ch in enumerate(lowest_channels_left):
-            print(f'{i+1}. {evks_crop.ch_names[ch]}: {min_amps_left[sorted_min_indices[i]]:.3f}')
-        # Combine the highest and lowest channels and ensure no duplicates
-        peak_channels_left = list(set(highest_channels_left) | set(lowest_channels_left))
-        # Plot the evoked responses for the extreme left hemisphere channels
-        evks_crop.plot(exclude='bads', picks=peak_channels_left, window_title='Evoked Responses (Left Hemisphere)', show=True)
-
-    
-    mne.viz.plot_compare_evokeds(evks,
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(evks,
+                                 combine='mean',   
                                  ci=False,
-                                 combine='gfp',
-                                 picks=peak_channels_left,
                                  legend='upper left',
                                  show_sensors='upper right',
                                  colors=color_dict,
                                  linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, most active left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_most_active_left_hemisphere_chans_{onset_type}{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
-    mne.viz.plot_compare_evokeds(evks,
-                                 ci=.50,
-                                 combine='gfp',
-                                 picks=peak_channels_left,
-                                 legend='upper left',
-                                 show_sensors='upper right',
-                                 colors=color_dict,
-                                 linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, most active left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_most_active_left_hemisphere_chans_CI_50{onset_type}{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=True
+                                      ) 
     
-    mne.viz.plot_compare_evokeds(evks,
-                                 ci=.95,
-                                 combine='gfp',
-                                 picks=peak_channels_left,
-                                 legend='upper left',
-                                 show_sensors='upper right',
-                                 colors=color_dict,
-                                 linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, most active left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_most_active_left_hemisphere_chans_CI_95{onset_type}{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
-    # Compute the average for each ERP
-    # Directly using the lists of evoked objects, even if they have different channels
-    ba_total = mne.grand_average(ba_evokeds, drop_bads=False, interpolate_bads=True)
-    pa_total = mne.grand_average(pa_evokeds, drop_bads=False, interpolate_bads=True)
-    fa_total = mne.grand_average(fa_evokeds, drop_bads=False, interpolate_bads=True)
-    va_total = mne.grand_average(va_evokeds, drop_bads=False, interpolate_bads=True)
-
-    #butterfly plots of all conditions
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))
-    # Plot the grand averages (pa_total, ba_total, fa_total, va_total) for the butterfly plots
-    pa_total.plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
-    axes[0, 0].set_title('PA evoked, all channels')
-    ba_total.plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
-    axes[0, 1].set_title('BA evoked, all channels')
-    fa_total.plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
-    axes[1, 0].set_title('FA evoked, all channels')
-    va_total.plot(exclude='bads', spatial_colors=True, axes=axes[1, 1], show=False)
-    axes[1, 1].set_title('VA evoked, all channels')
-    # Calculate the maximum ylim value among the four plots
+    # Create subplots for the butterfly plots
+    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10))  # Adjusted to fit 3x2 grid
+    evks['pa1'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
+    axes[0, 0].set_title('PA1, all channels')
+    evks['pa2'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
+    axes[0, 1].set_title('PA2, all channels')
+    evks['pa3'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
+    axes[1, 0].set_title('PA3, all channels')
+    evks['pa4'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 1], show=False)
+    axes[1, 1].set_title('PA4, all channels')
+    evks['pa5'].plot(exclude='bads', spatial_colors=True, axes=axes[2, 0], show=False)
+    axes[2, 0].set_title('PA5, all channels')
+    evks['pa6'].plot(exclude='bads', spatial_colors=True, axes=axes[2, 1], show=False)
+    axes[2, 1].set_title('PA6, all channels')
+    # Calculate the maximum ylim value among the six plots
     max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten()])
     # Set the same ylim value for all subplots
     for ax in axes.flatten():
         ax.set_ylim([-max_ylim, max_ylim])
-    plt.suptitle(f'{protocol} All channels {onset_type} onset {ICA_suffix}{reject_suffix}', fontsize=14)
-    if plot_show:
-        plt.show()
-
-    plt.savefig(f'{plot_directory}/butterfly4conditions_{evoked_method}_{onset_type}{ICA_suffix}{reject_suffix}.pdf')
-    plt.close()
+    plt.suptitle(f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}', fontsize=14)
+    plt.show()
     
-    #get ready for topography
-    #create a 4x6 grid of subplots
-    fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
-    # time points for topo
-    times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450]
-    # Plot topomaps using grand averages (e.g., pa_total, ba_total)
-    pa_total.plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
-    ba_total.plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
-    fa_total.plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
-    va_total.plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
-    # Place labels above the left-most subplot in each row
-    for i, label in enumerate(['PA evoked', 'BA evoked', 'FA evoked', 'VA evoked']):
-        axs[i, 0].text(-0.1, 1.05, label, transform=axs[i, 0].transAxes, fontsize=12, va='center', ha='right')
-    fig.suptitle(f'{protocol} MEG Topographic Plots: 150-400 ms, {onset_type} {ICA_suffix} {reject_suffix}')
-    plt.subplots_adjust(hspace=0.4, wspace=0.2)
-    if plot_show:
-        plt.show()
-    plt.savefig(f'{plot_directory}/topos_{evoked_method}_{onset_type}{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
+    #plot topographic plot
+    # Create a 6x7 grid of subplots 
+    fig, axs = plt.subplots(6, 7, figsize=(20, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1, 1, 1], 'hspace': 0})
+    times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450, 0.500]  # Matches the 7 columns in the grid
+    evks['pa1'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)  # First row
+    evks['pa2'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)  # Second row
+    evks['pa3'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)  # Third row
+    evks['pa4'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)  # Fourth row
+    evks['pa5'].plot_topomap(times=times, ch_type='mag', axes=axs[4, :], show=False, colorbar=False)  # Fifth row
+    evks['pa6'].plot_topomap(times=times, ch_type='mag', axes=axs[5, :], show=False, colorbar=False)  # Sixth row
 
-
-#below is the second averaging method, it loads all epochs across all participants, then averages them all
-if averaging_pipeline == 'across_participant':
-    event_types = ['ba', 'pa', 'fa', 'va'] 
-    # Initialize a dictionary to store all epochs for each event type
-    all_epochs = {
-        'ba': [],
-        'pa': [],
-        'fa': [],
-        'va': []
-    }
+    plt.show()
     
-    # Loop through each participant to load saved epochs
-    for part_label, participant_id in parts.items():
-        for event_type in event_types:
-            try:
-                epochs = mne.read_epochs(data_dir / f"{participant_id}_{event_type}_{ICA_suffix}_{reject_suffix}-epo.fif")
-                all_epochs[event_type].append(epochs)  # Store epochs in the appropriate list
-            except FileNotFoundError:
-                print(f"File not found for {participant_id} and event type {event_type}. Skipping.")
-            except Exception as e:
-                print(f"An error occurred for {participant_id} and event type {event_type}: {e}. Skipping.")
-    
-    # Initialize a dictionary to store individual ERPs for each condition
-    set_evks = {condition: [] for condition in all_epochs.keys()}
-    
-    # Iterate through each condition in all_epochs
-    for condition, epochs_list in all_epochs.items():
-        # Calculate the ERP for each condition
-        if epochs_list:  # Check if there's at least one entry
-            combined_epochs = mne.concatenate_epochs(epochs_list)  # Combine all epochs for the current condition
-            evk_across_parts = combined_epochs.average()  # Average epochs to create the evoked object
-            set_evks[condition] = evk_across_parts  # Store the averaged evoked object
-        else:
-            print(f"No epochs found for condition {condition}. Skipping.")
-   
-
-    # Define info for the plots
-    color_dict = {'pa': 'gray', 'ba': 'blue', 'fa': 'green', 'va': 'red'}
-    linestyle_dict = {'pa': '-', 'ba': '-', 'fa': '-', 'va': '-'}
-
-    # Plot all channels for all participants 
-    fig = mne.viz.plot_compare_evokeds(set_evks,
-                                       ci=False,
-                                       legend='upper left',
-                                       show_sensors='upper right',
-                                       colors=color_dict,
-                                       linestyles=linestyle_dict,
-                                       title=f'{protocol} participants ({n}), {onset_type} onset{ICA_suffix} {reject_suffix}',
-                                       show=plot_show)   
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
-    # Plot comparing all grand averages with the mean combine
-    fig = mne.viz.plot_compare_evokeds(set_evks,
-                                       combine='mean',
-                                       ci=False,
-                                       legend='upper left',
-                                       show_sensors='upper right',
-                                       colors=color_dict,
-                                       linestyles=linestyle_dict,
-                                       title=f'{protocol} participants ({n}), {onset_type}_{ICA_suffix}_mean_{reject_suffix}',
-                                       show=plot_show)
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_{onset_type}{ICA_suffix}_mean_{reject_suffix}.pdf')
-    plt.close()
-
-
-    #channel selection, left hemisphere
     # Get the channel names for left hemisphere (based on negative x-coordinate)
-    for condition, evoked in set_evks.items():
-        left_hemisphere_chs = [ch_name for ch_name, pos in zip(evoked.info['ch_names'], evoked.info['chs']) if pos['loc'][0] < 0]
-    
-    mne.viz.plot_compare_evokeds(set_evks,
+    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evk.info['ch_names'], evk.info['chs']) if pos['loc'][0] < 0]
+    #left hemispehere chans
+    mne.viz.plot_compare_evokeds(evks,
+                                 combine='gfp',
+                                 picks = left_hemisphere_chs,
                                  ci=False,
-                                 combine='gfp',
-                                 picks=left_hemisphere_chs,
                                  legend='upper left',
                                  show_sensors='upper right',
                                  colors=color_dict,
                                  linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_{evoked_method}_left_hemisphere_chans_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=plot_show,
+                                 ylim=dict(mag=[0, 30])# set y-axis limits
+                                          ) 
+    plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_left_hemisphere_channels_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
     plt.close()
+    
+if averaging_pipeline == 'per_participant':
+    # Initialize a dictionary to store individual ERPs for each condition
+    individual_evks = {condition: [] for condition in all_pa_epochs.keys()}
+    
+    # Initialize a dictionary to count the number of epochs for each condition
+    individual_epochs_counts = {condition: 0 for condition in all_pa_epochs.keys()}
+    
+    # Iterate through each condition in categorized_epochs
+    for condition, epochs_list in all_pa_epochs.items():
+        # Calculate the ERP for each participant individually
+        for epochs in epochs_list:
+            if len(epochs) > 0:
+                evk_across_parts = epochs.average()
+                individual_evks[condition].append(evk_across_parts)
+                # Increment the count for this condition
+                individual_epochs_counts[condition] += len(epochs)
+            else:
+                print(f"Skipping empty Epochs object for condition {condition}")
+    
+    
+    # print the number of ERPs per condition
+    print("Number of ERPs per condition:")
+    for condition, evks in individual_evks.items():
+        print(f"{condition}: {len(evks)}")  # Print the count of ERPs for each condition
+    
+    # print the counts of epochs
+    print("\nCount of epochs for each condition:")
+    for condition, count in individual_epochs_counts.items():
+        print(f"{condition}: {count}")
+    
+    # Calculate the number of participants based on the evoked objects
+    num_participants_used = len(epochs_list)
+    title = f'{protocol} participants ({num_participants_used}),{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}'
 
-    mne.viz.plot_compare_evokeds(set_evks,
-                                 ci=.50,
-                                 combine='gfp',
-                                 picks=left_hemisphere_chs,
+    
+    # Define info for the plots
+    color_dict = {'pa1': 'red', 'pa2': 'orange', 'pa3': 'yellow', 'pa4': 'green', 'pa5': 'blue', 'pa6': 'indigo'}
+    linestyle_dict = {'pa1': '-', 'pa2': '-', 'pa3': '-', 'pa4': '-', 'pa5': '-', 'pa6': '-'}
+    
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(individual_evks,
+                                 ci=False,
                                  legend='upper left',
                                  show_sensors='upper right',
                                  colors=color_dict,
                                  linestyles=linestyle_dict,
-                                 title=f'All participants ({n}): deviant conditions, left hemisphere channels',
-                                 show=plot_show
-                                 )
-    plt.savefig(f'{plot_directory}/ERP_CI_50_{evoked_method}_left_hemisphere_chans_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
-    #butterfly plots of all conditions
-    #create subplots for the butterfly plots
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))
-    #access each evoked object from the dictionary using its key
-    set_evks['pa'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 0], show=False)
-    axes[0, 0].set_title('PA evoked, all channels')
-    set_evks['ba'].plot(exclude='bads', spatial_colors=True, axes=axes[0, 1], show=False)
-    axes[0, 1].set_title('BA evoked, all channels')
-    set_evks['fa'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 0], show=False)
-    axes[1, 0].set_title('FA evoked, all channels')
-    set_evks['va'].plot(exclude='bads', spatial_colors=True, axes=axes[1, 1], show=False)
-    axes[1, 1].set_title('VA evoked, all channels')
-    #calculate the maximum ylim value among the four plots
-    max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten()])
-    #set the same ylim value for all subplots
-    for ax in axes.flatten():
-        ax.set_ylim([-max_ylim, max_ylim])
-    plt.suptitle(f'{protocol} All channels {onset_type} {ICA_suffix} {reject_suffix}', fontsize=14)
-    if plot_show:
-        plt.show()
-    plt.savefig(f'{plot_directory}/butterfly4conditions_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-    
-    #get ready for topography
-    #create a 4x6 grid of subplots
-    fig, axs = plt.subplots(4, 6, figsize=(16, 12), gridspec_kw={'height_ratios': [1, 1, 1, 1], 'hspace': 0})
-    times = [0.200, 0.250, 0.300, 0.350, 0.400, 0.450]
-    set_evks['pa'].plot_topomap(times=times, ch_type='mag', axes=axs[0, :], show=False, colorbar=False)
-    set_evks['ba'].plot_topomap(times=times, ch_type='mag', axes=axs[1, :], show=False, colorbar=False)
-    set_evks['fa'].plot_topomap(times=times, ch_type='mag', axes=axs[2, :], show=False, colorbar=False)
-    set_evks['va'].plot_topomap(times=times, ch_type='mag', axes=axs[3, :], show=False, colorbar=False)
-    for i, label in enumerate(['PA evoked', 'BA evoked', 'FA evoked', 'VA evoked']):
-        # Place text above the left-most subplot in each row
-        axs[i, 0].text(-0.1, 1.05, label, transform=axs[i, 0].transAxes, fontsize=12, va='center', ha='right')
-    fig.suptitle(f'{protocol} MEG Topographic Plots: 150-400 ms, {onset_type} {ICA_suffix}{reject_suffix}')
-    plt.subplots_adjust(hspace=0.4, wspace=0.2)
-    if plot_show:
-        plt.show()
-    plt.savefig(f'{plot_directory}/topos_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-    plt.close()
-
-    
-    #channel selection, plot only dipole on left hemisphere by looking for highest absolute amplitude channels in left hemisphere
-    #define values for cropping the evoked data to the time span of interest
-    crop_min = 0.200  # Start time for cropping
-    crop_max = 0.450  # End time for cropping
-    
-    #empty lists to store cropped evoked objects
-    evks_crop_ba = []
-    evks_crop_pa = []
-    evks_crop_fa = []
-    evks_crop_va = []
-    
-    # crop the evoked objects for each condition
-    for condition in ['ba', 'pa', 'fa', 'va']:
-        try:
-            evoked = set_evks[condition]  # Get the evoked object for the condition
-            cropped_evoked = evoked.copy().crop(tmin=crop_min, tmax=crop_max)  # Crop the evoked object
-            if condition == 'ba':
-                evks_crop_ba.append(cropped_evoked)
-            elif condition == 'pa':
-                evks_crop_pa.append(cropped_evoked)
-            elif condition == 'fa':
-                evks_crop_fa.append(cropped_evoked)
-            elif condition == 'va':
-                evks_crop_va.append(cropped_evoked)
-        except Exception as e:
-            print(f"An error occurred while cropping {condition}: {e}")
-    # combine the cropped evoked objects into single evoked objects for each condition
-    if evks_crop_ba:
-        evks_crop_ba = mne.combine_evoked(evks_crop_ba, weights='equal')
-    if evks_crop_pa:
-        evks_crop_pa = mne.combine_evoked(evks_crop_pa, weights='equal')
-    if evks_crop_fa:
-        evks_crop_fa = mne.combine_evoked(evks_crop_fa, weights='equal')
-    if evks_crop_va:
-        evks_crop_va = mne.combine_evoked(evks_crop_va, weights='equal')
-    # Now combine all evoked conditions into a single evoked object
-    evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_pa, evks_crop_fa, evks_crop_va], weights='equal')
-    # Get the channel names for the left hemisphere (based on negative x-coordinate)
-    left_hemisphere_chs = [ch_name for ch_name, pos in zip(evks_crop.ch_names, evks_crop.info['chs']) if pos['loc'][0] < 0]
-    # Get the indices of the left hemisphere channels
-    left_hemi_indices = [evks_crop.ch_names.index(ch) for ch in left_hemisphere_chs]
-    # Check if any left hemisphere channels were found
-    if not left_hemi_indices:
-        print("No left hemisphere channels found for plotting.")
-    else:
-        # Calculate the max and min amplitudes for the left hemisphere channels only
-        max_amps_left = np.max(evks_crop.data[left_hemi_indices, :], axis=1)
-        min_amps_left = np.min(evks_crop.data[left_hemi_indices, :], axis=1)
-        # Sort the left hemisphere channels by maximum and minimum amplitudes
-        sorted_max_indices = np.argsort(max_amps_left)[-10:][::-1]  # Indices for highest amplitudes
-        sorted_min_indices = np.argsort(min_amps_left)[:10]  # Indices for lowest amplitudes
-        # Select the corresponding channel indices from left_hemi_indices
-        highest_channels_left = [left_hemi_indices[i] for i in sorted_max_indices]
-        lowest_channels_left = [left_hemi_indices[i] for i in sorted_min_indices]
-        # Print the channel names and amplitudes
-        print('Left hemisphere channels with highest amplitudes:')
-        for i, ch in enumerate(highest_channels_left):
-            print(f'{i+1}. {evks_crop.ch_names[ch]}: {max_amps_left[sorted_max_indices[i]]:.3f}')
-        print('\nLeft hemisphere channels with lowest amplitudes:')
-        for i, ch in enumerate(lowest_channels_left):
-            print(f'{i+1}. {evks_crop.ch_names[ch]}: {min_amps_left[sorted_min_indices[i]]:.3f}')
-        # Combine the highest and lowest channels and ensure no duplicates
-        peak_channels_left = list(set(highest_channels_left) | set(lowest_channels_left))
-        # Plot the evoked responses for the extreme left hemisphere channels
-        evks_crop.plot(exclude='bads', picks=peak_channels_left, window_title='Evoked Responses (Left Hemisphere)', show=True)
-    
-        mne.viz.plot_compare_evokeds(set_evks,
-                                     ci=False,
-                                     combine='gfp',
-                                     picks=peak_channels_left,
-                                     legend='upper left',
-                                     show_sensors='upper right',
-                                     colors=color_dict,
-                                     linestyles=linestyle_dict,
-                                     title=f'All participants ({n}): deviant conditions, most active left hemisphere channels',
-                                     show=plot_show
-                                     )
-        plt.savefig(f'{plot_directory}/ERP_{evoked_method}_most_active_left_hemisphere_chans_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
-        plt.close()
-
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=plot_show,    
+                                 #ylim=dict(mag=[0, 30])# set y-axis limits
+                                      ) 
+    plt.savefig(f'{plot_directory}/ERPs_6_pa_conditions_{evoked_method}_{onset_type}_{ICA_suffix}_{reject_suffix}.pdf')
+        
+    #all channels for all participants
+    fig = mne.viz.plot_compare_evokeds(individual_evks,
+                                 combine='mean',   
+                                 ci=False,
+                                 legend='upper left',
+                                 show_sensors='upper right',
+                                 colors=color_dict,
+                                 linestyles=linestyle_dict,
+                                 title=f'Suppression effect of PA condition sequencees; participants ({n}), {onset_type} onset{ICA_file} {reject_file}',
+                                 show=True
+                                      ) 
