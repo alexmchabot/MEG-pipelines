@@ -1,0 +1,122 @@
+import os
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+import pandas as pd
+
+protocol = 'protocol01'
+onset_type = 'consonant'  # 'vowel' or 'consonant' based on your needs
+ICA=True
+reject_bad_epochs=True
+
+# define dataset based on onset type
+dataset = 'V_onset' if onset_type == 'vowel' else 'C_onset'  
+ICA_suffix = "ICA" if ICA else ""
+reject_suffix = "bad_epochs_rejected" if reject_bad_epochs else ""
+data_dir = pathlib.Path(f'../../out_data/{protocol}/{dataset}')
+
+date = 'November 03'            
+                                          
+left_temporal_channels = ['MEG 131', 'MEG 088', 'MEG 130', 'MEG 089', 'MEG 137', 
+                          'MEG 046', 'MEG 138', 'MEG 080', 'MEG 091', 'MEG 041', 
+                          'MEG 078', 'MEG 139']
+
+time_intervals = [(0.080, 0.160), (0.160, 0.240), (0.240, 0.320), (0.320, 0.400)]
+participants = ['R2823', 
+                'R2830',  
+                'R2890', 
+                'R2896', 
+                'R2897', 
+                'R2900', 
+                'R2906', 
+                'R2915', 
+                'R2968', 
+                'R2976', 
+                'R2996', 
+                'R2997', 
+                'R3005', 
+                'R3007', 
+                #'R3008'  # rejected because of noise from filling
+             ]
+
+
+conditions = ['ba', 'pa', 'fa', 'va']
+
+#repeated measures ANOVA
+
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from statsmodels.formula.api import ols
+import statsmodels.api as sm
+
+
+data = []
+
+# Load and process the evoked data
+data_dir = pathlib.Path(f'../../out_data/{protocol}/{dataset}')
+
+for participant in participants:
+    for condition in conditions:
+        file_path = data_dir /f"{participant}_{ICA_suffix}_{reject_suffix}-ave.fif"
+        evokeds = mne.read_evokeds(file_path, baseline=None)
+
+        for evoked in evokeds:
+            # calculate mean amplitude for each time interval for left temporal channels
+            evoked_left = evoked.copy().pick_channels(left_temporal_channels)
+            for start, end in time_intervals:
+                evoked_crop = evoked_left.copy().crop(start, end)
+                mean_amplitude = evoked_crop.data.mean(axis=0).mean()  # Mean across channels and time
+                data.append({
+                    'Participant': participant,
+                    'Condition': condition,
+                    'MeanAmplitude': mean_amplitude,
+                    'ChannelSelection': 'Left Temporal',
+                    'TimeInterval': f"{int(start*1000)}-{int(end*1000)} ms"
+                })
+    
+            # calculate mean amplitude for each time interval for all channels
+            evoked_all = evoked.copy().pick_types(meg=True)  # Assuming this picks all MEG channels
+            for start, end in time_intervals:
+                evoked_crop = evoked_all.copy().crop(start, end)
+                mean_amplitude = evoked_crop.data.mean(axis=0).mean()  # Mean across channels and time
+                data.append({
+                    'Participant': participant,
+                    'Condition': condition,
+                    'MeanAmplitude': mean_amplitude,
+                    'ChannelSelection': 'All Channels',
+                    'TimeInterval': f"{int(start*1000)}-{int(end*1000)} ms"
+                })
+
+# convert collected data into a DataFrame for statistical analysis
+df = pd.DataFrame(data)
+
+# convert columns to categorical types
+df['Condition'] = df['Condition'].astype('category')
+df['ChannelSelection'] = df['ChannelSelection'].astype('category')
+df['TimeInterval'] = df['TimeInterval'].astype('category')
+df['Participant'] = df['Participant'].astype('category')
+
+# fit repeated measures ANOVA
+formula = "MeanAmplitude ~ C(Condition) * C(ChannelSelection) * C(TimeInterval)"
+model = ols(formula, data=df).fit()
+anova_table = sm.stats.anova_lm(model, typ=2)
+
+print(anova_table)
+
+#tukey test
+tukey_results = pairwise_tukeyhsd(endog=df['MeanAmplitude'], groups=df['TimeInterval'], alpha=0.05)
+print(tukey_results)
+
+# convert categorical columns to string
+df['Condition'] = df['Condition'].astype(str)
+df['TimeInterval'] = df['TimeInterval'].astype(str)
+
+# create the new column for the combined factor
+df['Condition_TimeInterval'] = df['Condition'] + " " + df['TimeInterval']
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+# Tukey's HSD test for the combined factor
+tukey_results_combined = pairwise_tukeyhsd(endog=df['MeanAmplitude'], groups=df['Condition_TimeInterval'], alpha=0.05)
+print(tukey_results_combined)
