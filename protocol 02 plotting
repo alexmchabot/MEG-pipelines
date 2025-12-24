@@ -1,0 +1,399 @@
+#this is the plotting script for protocol 2
+#it works as intended as of 12/10/2025
+
+import os
+import pathlib
+import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import mne
+
+matplotlib.rcParams.update({
+    'font.family': 'serif',
+    'font.size' : 12,
+    'text.usetex': True,
+    'pgf.rcfonts': False,
+})
+
+# Select protocol and onset type
+protocol = 'protocol02'
+onset_type = 'consonant'  # 'vowel' or 'consonant' based on your needs
+date = 'August 11'
+       
+ICA = True                 
+reject_bad_epochs = True                   
+plot_show = True                                           
+
+# list of participant IDs
+participant_ids = ['R3027', #1 
+                   'R3039', #2 
+                   'R3401', #3 
+                   'R3703', #4 
+                   'R3078', #5 
+                   'R3079', #6 
+                   'R3086', #7 
+                   'R3090', #8 
+                   'R3109', #9 
+                   'R3112', #10 
+                   'R3113', #11 
+                   'R3117', #12 
+                   'R3120', #13 
+                   'R3124', #14 
+                   'R3126'  #15 
+                  ]
+n = 'n=' + str(len(participant_ids))
+
+conditions = ['ba_4', 'ba_5', 'ba_6', 
+              'fa_4', 'fa_5', 'fa_6', 
+              'va_4', 'va_5', 'va_6', 
+              'all_ba_pa', 'all_fa_pa', 'all_va_pa']
+
+
+#don't change below unless its forever
+#loading directory
+# Define dataset based on onset type
+dataset = 'V_onset' if onset_type == 'vowel' else 'C_onset'
+data_dir = pathlib.Path(f'../../out_data/{protocol}/{dataset}')
+
+# out files
+ICA_suffix = "ICA" if ICA else ""
+reject_suffix = "bad_epochs_rejected" if reject_bad_epochs else ""
+plot_directory = pathlib.Path(f'../../out_data/{protocol}/plots/{date}{n}/article')
+if not plot_directory.exists():
+    plot_directory.mkdir(parents=True)
+
+# define file names for saving based on ICA variable
+ICA_file = "ICA" if ICA else ""
+reject_file = "bad_epochs_rejected" if reject_bad_epochs else ""
+
+## Loading evokeds
+
+
+erp_dicts = {}  # Dictionary for all conditions
+
+# Loop over participant IDs and conditions to load evoked data
+for participant_id in participant_ids:
+    for condition in conditions:
+        file_path = data_dir / f"{participant_id}_{onset_type}_evoked_{condition}-ave.fif"
+        print(f"Attempting to read: {file_path}")  
+        evokeds_list = mne.read_evokeds(file_path, baseline=None)
+        evoked = evokeds_list[0]
+        if condition not in erp_dicts:
+            erp_dicts[condition] = []
+        erp_dicts[condition].append(evoked)  # Append the evoked object
+
+
+# Print the ERPs and their counts for each condition dictionary
+for condition, evoked_list in erp_dicts.items():
+    print(f"\nCondition: {condition}")
+    total_epochs = 0  
+    for idx, evoked in enumerate(evoked_list):
+        print(f"Participant {idx + 1}: {evoked.nave} epochs")
+        total_epochs += evoked.nave  
+    print(f"Total epochs for {condition}: {total_epochs}")
+
+
+evoked_mapping = {
+    'ba_4': 'PA after BA (4th)',
+    'ba_5': 'PA after BA (5th)',
+    'ba_6': 'PA after BA (6th)',
+    'fa_4': 'PA after FA (4th)',
+    'fa_5': 'PA after FA (5th)',
+    'fa_6': 'PA after FA (6th)',
+    'va_4': 'PA after VA (4th)',
+    'va_5': 'PA after VA (5th)',
+    'va_6': 'PA after VA (6th)'
+}
+
+evoked_mapping_all = {
+    'all_ba_pa': 'PA after all BAs',
+    'all_fa_pa': 'PA after all FAs',
+    'all_va_pa': 'PA after all VAs'
+}
+
+# Create evks_4_6 by filtering for conditions in evoked_mapping
+evks_4_6 = {evoked_mapping[condition]: evoked for condition, evoked in erp_dicts.items() if condition in evoked_mapping}
+
+# Create evks_all
+evks_all = {evoked_mapping_all[condition]: evoked for condition, evoked in erp_dicts.items() if condition in ['all_ba_pa', 
+                                                                                          'all_fa_pa', 
+                                                                                          'all_va_pa']}
+
+
+# Create evks_6th from evks_4_6
+evks_4th = {condition: evoked for condition, evoked in evks_4_6.items() if condition in ['PA after BA (4th)',
+                                                                                         'PA after FA (4th)', 
+                                                                                         'PA after VA (4th)']}
+
+
+# Create evks_6th from evks_4_6
+evks_6th = {condition: evoked for condition, evoked in evks_4_6.items() if condition in ['PA after BA (6th)',
+                                                                                         'PA after FA (6th)', 
+                                                                                         'PA after VA (6th)']}
+
+# Remap the conditions to ones that are easier to read, and also will serve as the legend on plots
+evks_4_6 = {evoked_mapping.get(cond, cond): evoked for cond, evoked in evks_4_6.items()}
+
+## Plot all 9 conditions
+# Color and linestyle dictionaries based on category and number suffix
+color_dict_4 = {
+    'PA after BA (4th)': 'blue',     # Blu
+    'PA after FA (4th)': 'green',   # Green 
+    'PA after VA (4th)': 'red',     # Red
+}
+
+linestyle_dict_4 = {
+    'PA after BA (4th)': '-',
+    'PA after FA (4th)': '-',
+    'PA after VA (4th)': '-',
+}
+
+
+#all this is to get left_temporal_channels
+# Define values for cropping the evoked data to the time span of interest
+crop_min = 0.100  # Start time for cropping
+crop_max = 0.400  # End time for cropping
+
+# Initialize empty lists to store cropped evoked objects
+evks_crop_ba = []
+evks_crop_fa = []
+evks_crop_va = []
+
+# Crop the evoked objects for each condition
+for evoked in evks_all['PA after all BAs']:
+    evks_crop_ba.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+for evoked in evks_all['PA after all FAs']:
+    evks_crop_fa.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+for evoked in evks_all['PA after all VAs']:
+    evks_crop_va.append(evoked.copy().crop(tmin=crop_min, tmax=crop_max))
+
+# Combine the cropped evoked objects into single evoked objects for each condition
+evks_crop_ba = mne.combine_evoked(evks_crop_ba, weights='equal')
+evks_crop_fa = mne.combine_evoked(evks_crop_fa, weights='equal')
+evks_crop_va = mne.combine_evoked(evks_crop_va, weights='equal')
+
+# Now combine all evoked conditions into a single evoked object
+evks_crop = mne.combine_evoked([evks_crop_ba, evks_crop_fa, evks_crop_va], weights='equal')
+
+left_hemisphere_chs = [ch_name for ch_name, pos in zip(evks_crop.ch_names, evks_crop.info['chs']) if pos['loc'][0] < 0]
+# Get the indices of the left hemisphere channels
+left_hemi_indices = [evks_crop.ch_names.index(ch) for ch in left_hemisphere_chs]
+
+# Calculate the max and min amplitudes for the left hemisphere channels only
+max_amps = np.max(evks_crop.data[left_hemi_indices, :], axis=1)
+min_amps = np.min(evks_crop.data[left_hemi_indices, :], axis=1)
+
+# Sort the left hemisphere channels by maximum and minimum amplitudes
+sorted_max_indices = np.argsort(max_amps)[-10:][::-1] 
+sorted_min_indices = np.argsort(min_amps)[:10]  
+
+# Select the corresponding channel indices from left_hemi_indices
+highest_channels_left = [left_hemi_indices[i] for i in sorted_max_indices]
+lowest_channels_left = [left_hemi_indices[i] for i in sorted_min_indices]
+
+
+# Combine the highest and lowest channels and ensure no duplicates
+peak_channels_left = list(set(highest_channels_left) | set(lowest_channels_left))
+
+left_temporal_channels = lowest_channels_left
+
+evks_crop.plot(exclude='bads', picks=peak_channels_left, window_title='Evoked Responses (Left Hemisphere)', show=True)
+
+print(left_temporal_channels)
+
+#butterfly    
+all_ba_pa_avg = mne.grand_average(evks_all['PA after all BAs'], drop_bads=False, interpolate_bads=True)
+all_fa_pa_avg = mne.grand_average(evks_all['PA after all FAs'], drop_bads=False, interpolate_bads=True)
+all_va_pa_avg = mne.grand_average(evks_all['PA after all VAs'], drop_bads=False, interpolate_bads=True)
+
+#Create subplots for the butterfly plots
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(10, 14))
+
+all_ba_pa_avg.plot(exclude='bads', spatial_colors=True, axes=axes[0], show=False)
+axes[0].set_title('Combined BA Evoked, all channels')
+
+all_fa_pa_avg.plot(exclude='bads', spatial_colors=True, axes=axes[1], show=False)
+axes[1].set_title('Combined FA Evoked, all channels')
+
+all_va_pa_avg.plot(exclude='bads', spatial_colors=True, axes=axes[2], show=False)
+axes[2].set_title('Combined VA Evoked, all channels')
+
+# Adjust y-limits for uniformity
+max_ylim = max([ax.get_ylim()[1] for ax in axes.flatten() if len(ax.lines) > 0])
+
+# Adjust the vertical spacing between the subplots (increase hspace value)
+plt.subplots_adjust(hspace=0.3)
+plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+# Different highlight windows for each plot
+highlight_windows_all = [
+    [(0.065, 0.125), (0.150, 0.200), (0.300, 0.375)],               # BA
+    [(0.055, 0.130), (0.195, 0.240), (0.290, 0.365)],               # FA
+    [(0.090, 0.145), (0.170, 0.240), (0.300, 0.375)]             # VA
+]
+
+# Create subplots again for highlighting
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(10, 14))
+
+all_ba_pa_avg.plot(exclude='bads', spatial_colors=True, axes=axes[0], show=False)
+axes[0].set_title('(A) Evoked activity at all channels for BA condition')
+
+all_fa_pa_avg.plot(exclude='bads', spatial_colors=True, axes=axes[1], show=False)
+axes[1].set_title('(B) Evoked activity at all channels for FA condition')
+
+all_va_pa_avg.plot(exclude='bads', spatial_colors=True, axes=axes[2], show=False)
+axes[2].set_title('(C) Evoked activity at all channels for VA condition')
+
+# Highlight latency windows on each subplot
+for ax, windows in zip(axes, highlight_windows_all):
+    for start, end in windows:
+        ax.axvspan(start, end, color='gray', alpha=0.3)
+
+for ax in axes:
+    ax.set_ylim(-80, 80)
+
+# Adjust vertical spacing
+plt.subplots_adjust(hspace=0.3)
+plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+if plot_show:
+    plt.show()
+
+plt.savefig(plot_directory / 'protocol_two_article_butterfly3condition.pdf')
+
+linestyle_dict_6th = {  
+    'PA after BA (6th)': '-',
+    'PA after FA (6th)': '-',
+    'PA after VA (6th)': '-'
+}
+
+color_dict_6th = {
+    'PA after BA (6th)': 'blue',
+    'PA after FA (6th)': 'green',
+    'PA after VA (6th)': 'red'
+}
+
+fig = mne.viz.plot_compare_evokeds(evks_6th,
+                                   picks = left_temporal_channels,
+                                   ci=False,
+                                   legend='upper left',
+                                   show_sensors='lower right',
+                                   #ylim=dict(mag=[0, 30]),
+                                   colors=color_dict_6th,
+                                   linestyles=linestyle_dict_6th,
+                                   show=plot_show,
+                                   title=' ',
+                                   )
+#plt.savefig(plot_directory / protocol_two_article_plot.pdf')
+
+fig_list = mne.viz.plot_compare_evokeds(evks_6th,
+                                   picks=left_temporal_channels,
+                                   ci=False,
+                                   legend='upper left',
+                                   show_sensors='lower right',
+                                   colors=color_dict_6th,
+                                   linestyles=linestyle_dict_6th,
+                                   show=False,
+                                   title=' ')
+
+fig = fig_list[0]
+ax = fig.axes[0]
+
+highlight_times = [
+    (0.075, 0.125),   # ~100 ms peak
+    (0.15, 0.25),   # ~200 ms peak
+    (0.30, 0.37)    # ~350 ms peak
+]
+
+for start, end in highlight_times:
+    ax.axvspan(start, end, color='gray', alpha=0.3)
+plt.savefig(plot_directory / 'protocol_two_article_plot.pdf')
+if plot_show:
+    plt.show()
+
+    ba6_avg = mne.grand_average(evks_6th['PA after BA (6th)'], drop_bads=False, interpolate_bads=True)
+fa6_avg = mne.grand_average(evks_6th['PA after FA (6th)'], drop_bads=False, interpolate_bads=True)
+va6_avg = mne.grand_average(evks_6th['PA after VA (6th)'], drop_bads=False, interpolate_bads=True)
+# Define the average time interval
+ba_topo_time_interval = (0.320, 0.350)  # in seconds
+fa_topo_time_interval = (0.330, 0.350)  # in seconds
+va_topo_time_interval = (0.320, 0.350)  # in seconds
+
+# Calculate the center time point for displaying the topomap
+ba_center_time = (ba_topo_time_interval[0] + ba_topo_time_interval[1]) / 2
+fa_center_time = (fa_topo_time_interval[0] + fa_topo_time_interval[1]) / 2
+va_center_time = (va_topo_time_interval[0] + va_topo_time_interval[1]) / 2
+
+# Create subplots for each condition
+fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+# Plot the topographic maps for each averaged condition without colorbars
+ba6_avg.plot_topomap(times=[ba_center_time], ch_type='mag', axes=axs[0], show=False, colorbar=False)
+fa6_avg.plot_topomap(times=[fa_center_time], ch_type='mag', axes=axs[1], show=False, colorbar=False)
+va6_avg.plot_topomap(times=[va_center_time], ch_type='mag', axes=axs[2], show=False, colorbar=False)
+
+# Set titles for each condition
+axs[0].set_title('(A) Standard [ba]\n320-350 ms')
+axs[1].set_title('(B) Standard [fa]\n320-350 ms')
+axs[2].set_title('(C) Standard [va]\n320-350 ms')
+
+plt.subplots_adjust(wspace=0.05)
+
+
+
+# Show the plot
+plt.show()
+
+# Load grand averages
+ba6_avg = mne.grand_average(evks_6th['PA after BA (6th)'], drop_bads=False, interpolate_bads=True)
+fa6_avg = mne.grand_average(evks_6th['PA after FA (6th)'], drop_bads=False, interpolate_bads=True)
+va6_avg = mne.grand_average(evks_6th['PA after VA (6th)'], drop_bads=False, interpolate_bads=True)
+
+begin_interval = 0.320
+end_interval = 0.350
+
+# Define time intervals for averaging (in seconds)
+ba_topo_time_interval = (begin_interval, end_interval)
+fa_topo_time_interval = (begin_interval, end_interval)
+va_topo_time_interval = (begin_interval, end_interval)
+
+# Function to average Evoked data across a time interval
+def average_evoked_data(evoked, tmin, tmax):
+    start_idx = evoked.time_as_index(tmin)[0]
+    end_idx = evoked.time_as_index(tmax)[0]
+    return np.mean(evoked.data[:, start_idx:end_idx + 1], axis=1)
+
+# Average data for each condition
+data_ba = average_evoked_data(ba6_avg, *ba_topo_time_interval)
+data_fa = average_evoked_data(fa6_avg, *fa_topo_time_interval)
+data_va = average_evoked_data(va6_avg, *va_topo_time_interval)
+
+# Create figure and axes
+fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+# Plot topomaps for each averaged dataset
+plot_topomap(data_ba, ba6_avg.info, axes=axs[0], show=False)
+plot_topomap(data_fa, fa6_avg.info, axes=axs[1], show=False)
+im_va, _ = plot_topomap(data_va, va6_avg.info, axes=axs[2], show=False)  # capture mappable for colorbar
+
+# Add shared colorbar on the right side
+cbar_ax = fig.add_axes([0.92, 0.1, 0.02, 0.8])  # [left, bottom, width, height]
+fig.colorbar(im_va, cax=cbar_ax)
+cbar_ax.set_title('Magnetic Field (fT)', fontsize=10)
+
+# Set subplot titles
+axs[0].set_title('(A) Standard [ba]\n320-350 ms')
+axs[1].set_title('(B) Standard [fa]\n320-350 ms')
+axs[2].set_title('(C) Standard [va]\n320-350 ms')
+
+# Adjust spacing between plots
+plt.subplots_adjust(wspace=0.05)
+
+# Save figure
+plt.savefig(plot_directory / 'topo_for_article_protocol_two.pdf')
+
+# Show plot
+plt.show()
