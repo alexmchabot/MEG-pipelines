@@ -1,0 +1,177 @@
+import pathlib
+import mne  
+import numpy as np  
+import pandas as pd  
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+date = 'May 10'
+protocol = 'protocol02'
+onset_type = 'consonant' 
+ICA = True
+reject_bad_epochs = True
+
+participants = ['R3027', 'R3039', 'R3401', 'R3703', 'R3078', 
+                'R3079', 'R3086', 'R3090', 'R3109', 'R3112', 
+                'R3113', 'R3117', 'R3120', 'R3124', 'R3126']
+
+conditions_6 = ['ba_6', 'fa_6', 'va_6']
+
+
+
+time_intervals = [(0.000, 0.080),  
+                  (0.080, 0.160), 
+                  (0.160, 0.240), 
+                  (0.240, 0.320),
+                  (0.320, 0.400)]
+
+
+left_temporal_indices = [88, 90, 77, 87, 127, 45, 93, 76, 137, 47]
+left_temporal_front = [45, 40, 81, 86, 3, 2, 44, 1, 83, 4]
+right_temporal_indices = [67, 98, 119, 120, 146, 58, 66, 97, 118, 90]
+right_temporal_front = [32, 157, 125, 60, 61, 64, 27, 56, 22, 17]
+
+data_dir = pathlib.Path(r'C:\Users\alexm\OneDrive\Documents\work\post doc project\piloting\MMN data\out_data\protocol02\C_onset')
+ICA_suffix = "ICA" if ICA else ""
+dataset = 'V_onset' if onset_type == 'vowel' else 'C_onset'
+reject_suffix = "bad_epochs_rejected" if reject_bad_epochs else ""
+
+## build data-frame
+data = []
+
+# Loop through participants and conditions
+for participant in participants:
+    for condition in conditions_6:
+        file_path = data_dir / f"{participant}_{onset_type}_evoked_{condition}-ave.fif"
+        evokeds = mne.read_evokeds(file_path, baseline=None)
+
+        for evoked in evokeds:
+            # Select channels
+            left_temporal_channels = [evoked.info['ch_names'][i] for i in left_temporal_indices if i < len(evoked.info['ch_names'])]
+            left_temporal_front_channels = [evoked.info['ch_names'][i] for i in left_temporal_front if i < len(evoked.info['ch_names'])]
+            right_temporal_channels = [evoked.info['ch_names'][i] for i in right_temporal_indices if i < len(evoked.info['ch_names'])]
+            right_temporal_front_channels = [evoked.info['ch_names'][i] for i in right_temporal_front if i < len(evoked.info['ch_names'])]
+
+            # Check if any channel selections are empty due to index out-of-bounds
+            if not left_temporal_channels:
+                print(f"Warning: No left temporal channels for participant {participant}, condition {condition}")
+            if not right_temporal_channels:
+                print(f"Warning: No right temporal channels for participant {participant}, condition {condition}")
+            if not left_temporal_front_channels:
+                print(f"Warning: No left temporal front channels for participant {participant}, condition {condition}")
+            if not right_temporal_front_channels:
+                print(f"Warning: No right temporal front channels for participant {participant}, condition {condition}")
+
+            # Create evoked objects for the channel selections
+            evoked_left = evoked.copy().pick(left_temporal_channels)
+            evoked_left_front = evoked.copy().pick(left_temporal_front_channels)
+            evoked_right = evoked.copy().pick(right_temporal_channels)
+            evoked_right_front = evoked.copy().pick(right_temporal_front_channels)
+
+            # Loop through time intervals and calculate mean amplitude for all sets of channels
+            for start, end in time_intervals:
+                # Left Temporal
+                evoked_crop_left = evoked_left.copy().crop(start, end)
+                mean_amplitude_left = evoked_crop_left.data.mean(axis=0).mean() * -1  # Invert for consistency
+                data.append({
+                    'Participant': participant,
+                    'Condition': condition,
+                    'MeanAmplitude': mean_amplitude_left,
+                    'ChannelSelection': 'Left Temporal',
+                    'TimeInterval': f"{int(start*1000)}-{int(end*1000)} ms"
+                })
+
+                # Left Temporal Front
+                evoked_crop_left_front = evoked_left_front.copy().crop(start, end)
+                mean_amplitude_left_front = evoked_crop_left_front.data.mean(axis=0).mean() * -1
+                data.append({
+                    'Participant': participant,
+                    'Condition': condition,
+                    'MeanAmplitude': mean_amplitude_left_front,
+                    'ChannelSelection': 'Left Temporal Front',
+                    'TimeInterval': f"{int(start*1000)}-{int(end*1000)} ms"
+                })
+
+                # Right Temporal
+                evoked_crop_right = evoked_right.copy().crop(start, end)
+                mean_amplitude_right = evoked_crop_right.data.mean(axis=0).mean()
+                data.append({
+                    'Participant': participant,
+                    'Condition': condition,
+                    'MeanAmplitude': mean_amplitude_right,
+                    'ChannelSelection': 'Right Temporal',
+                    'TimeInterval': f"{int(start*1000)}-{int(end*1000)} ms"
+                })
+
+                # Right Temporal Front
+                evoked_crop_right_front = evoked_right_front.copy().crop(start, end)
+                mean_amplitude_right_front = evoked_crop_right_front.data.mean(axis=0).mean()
+                data.append({
+                    'Participant': participant,
+                    'Condition': condition,
+                    'MeanAmplitude': mean_amplitude_right_front,
+                    'ChannelSelection': 'Right Temporal Front',
+                    'TimeInterval': f"{int(start*1000)}-{int(end*1000)} ms"
+                })
+
+# Create dataframe
+df = pd.DataFrame(data)
+df['MeanAmplitude_fT'] = df['MeanAmplitude'] * 1e15
+
+print(df)
+
+
+
+#first LMM test
+
+from statsmodels.formula.api import mixedlm
+
+# Define the model
+model = mixedlm("MeanAmplitude_fT ~ Condition", df, groups=df["Participant"])
+
+# Fit the model
+result = model.fit()
+
+# Print the results
+print(result.summary())
+
+# Tukey post hoc
+
+# Loop through each unique TimeInterval and ChannelSelection in the dataframe
+for interval in df["TimeInterval"].unique():
+    for channel in df["ChannelSelection"].unique():
+        # Subset the data for the current combination of TimeInterval and ChannelSelection
+        df_subset = df[(df["TimeInterval"] == interval) & (df["ChannelSelection"] == channel)]
+        
+        # Check if there is enough data to perform the test (at least two unique conditions)
+        if df_subset['Condition'].nunique() > 1:
+            tukey = pairwise_tukeyhsd(
+                df_subset['MeanAmplitude_fT'],  # The dependent variable
+                df_subset['Condition'],         # The factor being tested (condition)
+                alpha=0.05                    # Significance level
+            )
+            print(f"Post-hoc Tukey HSD results for TimeInterval = {interval} and ChannelSelection = {channel}")
+            print(tukey)
+        else:
+            print(f"Not enough unique conditions for TimeInterval = {interval} and ChannelSelection = {channel} to perform Tukey HSD")
+
+#cohen's d for effect size
+
+import pingouin as pg
+
+# filter the dataframe to use the significant results according to the tukey test
+df_sub = df[(df['TimeInterval'] == "160-240 ms") & (df['ChannelSelection'] == "Left Temporal")]
+
+# pivot to wide format so each row is a participant and each column corresponds to a condition
+df_wide = df_sub.pivot(index="Participant", columns="Condition", values="MeanAmplitude_fT").dropna()
+
+# compute paired Cohen's d for condition pairs
+d_ba_va = pg.compute_effsize(df_wide["ba_6"], df_wide["va_6"], paired=True, eftype='cohen')
+d_fa_va = pg.compute_effsize(df_wide["fa_6"], df_wide["va_6"], paired=True, eftype='cohen')
+d_ba_fa = pg.compute_effsize(df_wide["ba_6"], df_wide["fa_6"], paired=True, eftype='cohen')
+
+
+print(f"Cohen's d (paired) for ba_6 vs va_6: {d_ba_va:.3f}")
+print(f"Cohen's d (paired) for fa_6 vs va_6: {d_fa_va:.3f}")
+print(f"Cohen's d (paired) for ba_6 vs fa_6: {d_ba_fa:.3f}")
